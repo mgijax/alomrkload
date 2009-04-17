@@ -123,7 +123,7 @@ preload
 # optionally rm all files and subdirs dirs of directories on the command line
 # Note: archiving does not remove them
 #
-cleanDir ${OUTPUTDIR}
+cleanDir ${OUTPUTDIR} ${LOGDIR}
 
 #
 #  Run the alo marker association load
