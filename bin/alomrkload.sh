@@ -78,11 +78,11 @@ then
 fi
 
 #
-# source config file
+#  Source the load configuration file.
 #
-echo "Sourcing config file"
 
 . ${LOAD_CONFIG}
+echo "curator log ${LOG_CUR}"
 
 #
 #  Source the common DLA functions script.
@@ -101,11 +101,6 @@ else
     exit 1
 fi
 
-#
-#  Source the load configuration file.
-#
-. ${LOAD_CONFIG}
-
 ##################################################################
 ##################################################################
 #
@@ -123,7 +118,7 @@ preload
 # optionally rm all files and subdirs dirs of directories on the command line
 # Note: archiving does not remove them
 #
-cleanDir ${OUTPUTDIR} ${LOGDIR}
+cleanDir ${OUTPUTDIR}
 
 #
 #  Run the alo marker association load
