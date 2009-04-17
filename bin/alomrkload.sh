@@ -82,7 +82,6 @@ fi
 #
 
 . ${LOAD_CONFIG}
-echo "curator log ${LOG_CUR}"
 
 #
 #  Source the common DLA functions script.
