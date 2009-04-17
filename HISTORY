@@ -2,3 +2,5 @@ TAG:  genetrapload-4-3-0-1
 DATE: 04-17-2009
 STAFF:  sc
 CHANGES: TR7493 initial tag
+1) Added alomrkload.config.default, Install, index.html, HISTORY, ./bin/mrkaloload.sh
+2) Updated ./bin/aloMarkerAssoc.py to be DLA conforming (some env var name changes)
