@@ -1,0 +1,95 @@
+#format: sh
+#
+#  Configuration for alomrkload
+#
+#  This file sets up environment variables that are needed for the
+#  ALO Marker Association Load
+#
+###########################################################################
+
+#
+#  If the MGICONFIG environment variable does not have a local override,
+#  use the default "live" settings.
+#
+
+if [ "${MGICONFIG}" = "" ]
+then
+    MGICONFIG=/usr/local/mgi/live/mgiconfig
+    export MGICONFIG
+fi
+
+#  establish name of master config and source it
+CONFIG_MASTER=${MGICONFIG}/master.config.sh
+
+export CONFIG_MASTER
+
+. ${CONFIG_MASTER}
+
+#############################################################################
+#
+#  DLA LOAD SPECIFIC SETTINGS
+#
+#  These settings required by DLA loads
+#
+#############################################################################
+
+#
+#  Output File Settings
+#
+
+#  full path the the logs, reports, and archive directories
+FILEDIR=${DATALOADSOUTPUT}/mgi/alomrkload
+
+LOGDIR=${FILEDIR}/logs
+RPTDIR=${FILEDIR}/reports
+OUTPUTDIR=${FILEDIR}/output
+ARCHIVEDIR=${FILEDIR}/archive
+
+export FILEDIR LOGDIR RPTDIR OUTPUTDIR ARCHIVEDIR
+
+#
+#  Input File Settings
+#
+
+#  this load's MGI_User login. For DB tables CreatedBy and ModifiedBy column
+#  and for logging in radar jobstream table and files processed table
+JOBSTREAM=alomrkload
+
+export JOBSTREAM 
+
+#  Complete path name of the log files
+LOG_PROC=${LOGDIR}/alomrkload.proc.log
+LOG_DIAG=${LOGDIR}/alomrkload.diag.log
+LOG_CUR=${LOGDIR}/alomrkload.cur.log
+LOG_VAL=${LOGDIR}/alomrkload.val.log
+
+export LOG_PROC LOG_DIAG LOG_CUR LOG_VAL
+
+# when true logs debug info to the diagnostic log
+LOG_DEBUG=false
+
+# set to '-f' to log insert and update sql (done inline) set
+DBDEBUG=''
+
+export LOG_DEBUG DBDEBUG
+
+#############################################################################
+#
+#  INSTALL & JOBSTREAM SPECIFIC SETTINGS
+#
+#  These settings required by install or jobstream scripts 
+#
+#############################################################################
+
+#  name of the load for the subject of an email notification
+MAIL_LOADNAME="ALO Marker Association Load"
+
+#  recipient list for mailing the curation log file (comma-separated)
+MAIL_LOG_CUR="sc"
+
+export MAIL_LOADNAME MAIL_LOG_CUR
+
+# installation directory for this product - for Install script
+INSTALLDIR=${ALOMRKLOAD}
+
+export INSTALLDIR
