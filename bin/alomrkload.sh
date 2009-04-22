@@ -127,13 +127,7 @@ echo "\n`date`" >> ${LOG_PROC}
 echo "Running alo marker association  load" >> ${LOG_PROC}
 ${ALOMRKLOAD}/bin/aloMarkerAssoc.py ${DBDEBUG} >> ${LOG_DIAG} 2>&1
 STAT=$?
-if [ ${STAT} -ne 0 ]
-then
-    echo "ALO Marker Association Load failed.  Return status: ${STAT}" >> ${LOG_PROC}
-    shutDown
-    exit 1
-fi
-echo "ALO Marker Association Load completed successfully" >> ${LOG_PROC}
+checkStatus ${STAT} "ALO Marker Association Load"
 
 shutDown
 
