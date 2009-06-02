@@ -894,6 +894,7 @@ def getRepSeq (associations,	# list of dictionaries, each an association
 	# At this point, we have an allele with multiple sequences and which
 	# is not mixed.  We must examine overlaps with markers and lengths for
 	# the sequences.  The next cases...
+	# 2b. prefer DNA sequence tag methods over RNA ones
 	# 3. longest sequence which overlaps only one marker
 	# 4. longest sequence which overlaps more than one marker
 	# 5. longest sequence which overlaps no markers
@@ -908,14 +909,20 @@ def getRepSeq (associations,	# list of dictionaries, each an association
 		else:
 			length = 0			# should not happen
 
+		# if DNA-based sequence tag method, prefer over RNA-based
+		if 3983002 <= row['_TagMethod_key'] <= 3983007:
+			isDNA = 1
+		else:
+			isDNA = 0
+
 		if singleMarkers.has_key (seqKey):
-			tpl = (3, length, seqKey, assoc)
+			tpl = (3, isDNA, length, seqKey, assoc)
 		elif multiMarkers.has_key (seqKey):
-			tpl = (2, length, seqKey, assoc)
+			tpl = (2, isDNA, length, seqKey, assoc)
 		elif noMarkers.has_key (seqKey):
-			tpl = (1, length, seqKey, assoc)
+			tpl = (1, isDNA, length, seqKey, assoc)
 		else:						# no coords
-			tpl = (0, length, seqKey, assoc)
+			tpl = (0, isDNA, length, seqKey, assoc)
 
 		seqs.append (tpl)
 
@@ -974,11 +981,14 @@ def updateRepSeqs (
 	# get the set of sequence/allele associations, and the current
 	# representative flags
 
-	cmd = '''SELECT _Assoc_key,
-			_Allele_key,
-			_Sequence_key,
-			_Qualifier_key
-		FROM SEQ_Allele_Assoc'''
+	cmd = '''SELECT a._Assoc_key,
+			a._Allele_key,
+			a._Sequence_key,
+			a._Qualifier_key,
+			g._TagMethod_key
+		FROM SEQ_Allele_Assoc a,
+			SEQ_GeneTrap g
+		WHERE a._Sequence_key *= g._Sequence_key'''
 	results = db.sql (cmd, 'auto')
 
 	LOGGER.log ('diag', 'Retrieved %d sequence/allele associations' % \
