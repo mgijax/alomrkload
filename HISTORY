@@ -1,3 +1,10 @@
+TAG: alomrkload-4-3-0-7
+DATE: 06-03-2009
+STAFF:  jsb
+CHANGES:
+1) includes missed rule for choosing representative sequence (DNA vs RNA)
+2) bug fix regarding repeated molecular notes being inserted
+
 TAG: alomrkload-4-3-0-6
 DATE: 04-24-2009
 STAFF:  jsb
