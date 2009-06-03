@@ -910,7 +910,7 @@ def getRepSeq (associations,	# list of dictionaries, each an association
 			length = 0			# should not happen
 
 		# if DNA-based sequence tag method, prefer over RNA-based
-		if 3983002 <= row['_TagMethod_key'] <= 3983007:
+		if 3983002 <= assoc['_TagMethod_key'] <= 3983007:
 			isDNA = 1
 		else:
 			isDNA = 0
@@ -1171,11 +1171,11 @@ def updateMarkerAssoc (
 	nomenAlleles = {}
 	symbols = {}
 	cmd = '''SELECT _Allele_key, symbol, nomenSymbol
-		FROM ALL_Allele 
-		WHERE nomenSymbol != null'''
+		FROM ALL_Allele '''
 	results = db.sql(cmd, 'auto')
 	for row in results:
-		nomenAlleles[row['_Allele_key']] = row['nomenSymbol']
+		if row['nomenSymbol'] != None:
+			nomenAlleles[row['_Allele_key']] = row['nomenSymbol']
 		symbols[row['_Allele_key']] = row['symbol']
 
 	# build mappings from alleles to markers, and vice versa...
@@ -1747,6 +1747,8 @@ def setupNoteCache ():
 
 ###------------------------------------------------------------------------###
 
+ALREADY_SET = {}		# tracks allele keys where we set a note
+
 def setMolecularNote (alleleKey, noteChunks):
 	# Purpose: set the given molecular note (in 'noteChunks') for the
 	#	specified 'alleleKey' in the database
@@ -1756,11 +1758,18 @@ def setMolecularNote (alleleKey, noteChunks):
 	# Effects: updates a molecular note in the database
 	# Throws: propagates any exceptions from db.sql()
 
-	global NEXT_NOTE_KEY
+	global NEXT_NOTE_KEY, ALREADY_SET
 
 	# if this allele has a curated molecular note, skip the update
 	if CURATED_NOTES.has_key(alleleKey):
 		return False
+
+	# if we already set a note for this allele during this run, skip it
+	if ALREADY_SET.has_key(alleleKey):
+		return False
+
+	# otherwise, we're going to set one, so remember it
+	ALREADY_SET[alleleKey] = 1
 
 	# if this allele already has a loaded molecular note, we can either
 	# keep it (if the same) or delete its chunks (if different)
@@ -1814,7 +1823,7 @@ def splitString (s):
 
 ###------------------------------------------------------------------------###
 
-def fixMolecularNotes():
+def fixMolecularNotes(mixedAlleles):
 	# Purpose: assign type B and C molecular notes for alleles, which are
 	#	for alleles without marker associations and are based on the
 	#	goodHitCount for the allele's associated sequence
@@ -1826,7 +1835,7 @@ def fixMolecularNotes():
 
 	debug ('in fixMolecularNotes()')
 
-	cmd = '''SELECT a._Allele_key, t.goodHitCount
+	cmd = '''SELECT DISTINCT a._Allele_key, t.goodHitCount
 		FROM SEQ_GeneTrap t,
 			SEQ_Allele_Assoc a
 		WHERE t._Sequence_key = a._Sequence_key
@@ -1838,6 +1847,9 @@ def fixMolecularNotes():
 	countC = 0
 
 	for row in results:
+		# skip mixed alleles
+		if mixedAlleles.has_key(row['_Allele_key']):
+			continue
 		if row['goodHitCount'] == 1:
 			if setMolecularNote (row['_Allele_key'], NOTE_B):
 				countB = countB + 1
@@ -2102,7 +2114,7 @@ def main():
 	# set the B and C molecular notes for alleles which are not associated
 	# with a marker
 
-	fixMolecularNotes()
+	fixMolecularNotes(mixedAlleles)
 
 	# update statistics on any tables we altered, to boost performance
 
@@ -2133,3 +2145,4 @@ if __name__ == '__main__':
 		main()
 	except:
 		writeLogs (sys.exc_info())
+		sys.exit(1)
