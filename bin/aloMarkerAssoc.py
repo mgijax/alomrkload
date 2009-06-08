@@ -24,6 +24,8 @@ import db
 import runCommand
 import aloMarkerLogger
 
+#aloMarkerLogger.DEBUG = True
+
 ###-----------------------###
 ###--- usage statement ---###
 ###-----------------------###
@@ -615,15 +617,19 @@ def getMarkers():
 
 	debug ('in getMarkers()')
 
-	# seeking all markers with coordinate information
+	# seeking all markers with coordinate information -- including only
+	# genes, pseudogenes, and microRNAs
 
-	cmd = '''SELECT _Marker_key,
-			chromosome,
-			startCoordinate,
-			endCoordinate,
-			strand
-		FROM MRK_Location_Cache
-		WHERE startCoordinate != null'''
+	cmd = '''SELECT c._Marker_key,
+			c.chromosome,
+			c.startCoordinate,
+			c.endCoordinate,
+			c.strand
+		FROM MRK_Location_Cache c,
+			MRK_Marker m
+		WHERE c.startCoordinate != null
+			AND c._Marker_key = m._Marker_Key
+			AND m._Marker_Type_key IN (1, 7, 11)'''
 	results = db.sql (cmd, 'auto')
 	LOGGER.log ('diag', 'Retrieved %d markers with coordinates' % \
 		len(results))
@@ -1444,7 +1450,7 @@ def anySeparate (
 	seqs		# list of dictionaries; associated seqs for an allele
 	):
 	# Purpose: determine if any of the sequences given in 'seqs' do not
-	#	overlap any of the other sequences within 50bp
+	#	overlap any of the other sequences within 500bp
 	# Returns: True if there are any non-overlapping sequences, False if
 	#	all are overlapping
 	# Assumes: each dictionary in 'seqs' has these keys: 'chromosome',
@@ -1456,7 +1462,7 @@ def anySeparate (
 	# do this, we will walk two counters through 'seqs' in a nested loop.
 
 	i = 0			# outer counter; first seq to compare
-	threshold = 25		# amount to pad the ends of each sequence and
+	threshold = 250		# amount to pad the ends of each sequence and
 				# ...have them considered to be overlapping
 	lenSeqs = len(seqs)	# number of sequences
 
@@ -1574,7 +1580,7 @@ def flagMixedAlleles():
 
 	# An allele is mixed if (using only DNA-based seq tags) it...
 	# 1. has >1 sequence, and
-	# 2. at least one pair of sequences does not overlap within 50bp
+	# 2. at least one pair of sequences does not overlap within 500bp
 
 	clearMixed = []		# list of allele keys to clear the isMixed bit
 	setMixed = []		# list of allele keys to set the isMixed bit
