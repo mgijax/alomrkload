@@ -7,6 +7,7 @@
 
 import mgi_html		# used for its doSubSupTags() function
 import time		# used for its time.time() function (for timestamps)
+import sys
 
 ###------------------------------------------------------------------------###
 
@@ -14,6 +15,7 @@ import time		# used for its time.time() function (for timestamps)
 ###--- Global Variables ---###
 ###------------------------###
 
+DEBUG = False			# set to true for debugging output to stderr
 START_TIME = time.time()	# time at which the module is imported
 ALLELE_SYMBOLS = {}		# maps allele key to allele symbol
 MARKER_SYMBOLS = {}		# maps marker key to marker symbol
@@ -738,6 +740,9 @@ class AloMarkerLogManager:
 		if not self.logs.has_key(logName):
 			self.logs[logName] = AloMarkerLog()
 		self.logs[logName].addEntry (entry)
+		if DEBUG:
+			sys.stderr.write ('%9.3f : %s : %s\n' % (
+				time.time() - START_TIME, logName, entry) )
 		return
 
 	def writeLog (self,
