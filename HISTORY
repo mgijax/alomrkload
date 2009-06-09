@@ -1,3 +1,10 @@
+TAG: alomrkload-4-3-0-8
+DATE: 06-09-2009
+STAFF:  jsb
+CHANGES:
+1) widened allowed space for overlaps from 50bp to 500bp
+2) restricted markers to be of gene, pseudogene, and microRNA types
+
 TAG: alomrkload-4-3-0-7
 DATE: 06-03-2009
 STAFF:  jsb
