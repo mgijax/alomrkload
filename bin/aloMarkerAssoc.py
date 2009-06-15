@@ -24,7 +24,7 @@ import db
 import runCommand
 import aloMarkerLogger
 
-#aloMarkerLogger.DEBUG = True
+aloMarkerLogger.DEBUG = True
 
 ###-----------------------###
 ###--- usage statement ---###
@@ -75,6 +75,11 @@ SQL_FILE = None				# file pointer to output SQL cmds
 TEMP_FILES = []				# temporary files to delete when done
 UPDATED_TABLES = []			# list of tables with updated records
 LOGDIR = os.getcwd()			# logging directory (start in cwd)
+OUTPUTDIR = os.getcwd()			# output dir for files (start in cwd)
+USER = 1480				# key of sybase user alomrkload
+
+# current date and time, formatted for sybase
+NOW = time.strftime ('%m-%d-%Y %H:%M', time.localtime(time.time()))
 
 # for collecting log items
 LOGGER = aloMarkerLogger.AloMarkerLogManager()
@@ -92,6 +97,9 @@ NOTE_A = None	# initialized later by setupMolecularNotes() function
 NOTE_B = None
 NOTE_C = None
 NOTE_D = None
+
+ALLELE_SYMBOLS = {}	# cache of allele key -> allele symbol
+MARKER_SYMBOLS = {}	# cache of marker key -> marker symbol
 
 ###-----------------###
 ###--- functions ---###
@@ -215,7 +223,7 @@ def processCommandLine():
 	#	test query against the database
 	# Throws: propagates SystemExit from bailout() in case of errors
 
-	global VERBOSE, SQL_FILE, LOGDIR
+	global VERBOSE, SQL_FILE, LOGDIR, OUTPUTDIR
 
 	# extract options from command-line
 
@@ -246,6 +254,9 @@ def processCommandLine():
 
 	if environ.has_key('LOGDIR'):
 		LOGDIR = environ['LOGDIR']
+
+	if environ.has_key('OUTPUTDIR'):
+		OUTPUTDIR = environ['OUTPUTDIR']
 
 	if environ.has_key('LOG_DEBUG'):
 		if environ['LOG_DEBUG'].lower() != 'false':
@@ -345,14 +356,15 @@ def setPointCoordinates ():
 			gt._TagMethod_key,
 			gt._VectorEnd_key,
 			gt._ReverseComp_key
-		FROM SEQ_GeneTrap gt,
-			SEQ_Coord_Cache cc
+		FROM SEQ_GeneTrap gt (index idx_Sequence_key),
+			SEQ_Coord_Cache cc (index idx_Sequence_key)
 		WHERE gt._Sequence_key *= cc._Sequence_key'''
 
 	results = db.sql (cmd, 'auto')
 	LOGGER.log ('diag', 'Retrieved %d sequence coordinates' % len(results))
 
-	toSet = []
+	setToStart = []
+	setToEnd = []
 	toNull = []
 	for row in results:
 		pointCoord = None
@@ -387,33 +399,116 @@ def setPointCoordinates ():
 		if pointCoord != row['pointCoordinate']:
 			if pointCoord == None:
 				toNull.append (row['_Sequence_key'])
-			else:
-				toSet.append (
-					(row['_Sequence_key'], pointCoord) )
+			elif pointCoord == lower:
+				setToStart.append (row['_Sequence_key'])
+			else:	# pointCoord == upper
+				setToEnd.append (row['_Sequence_key'])
 
 	LOGGER.log ('diag', 'Identified new point coords')
 
-	cmd1 = '''UPDATE SEQ_GeneTrap SET pointCoordinate = %d 
-		WHERE _Sequence_key = %d'''
-	for (seqKey, pointCoord) in toSet:
-		update (cmd1 % (pointCoord, seqKey))
-	LOGGER.log ('diag', 'Updated point coordinate for %d sequences' % \
-		len(toSet))
+	cmd1 = '''UPDATE SEQ_GeneTrap
+		SET pointCoordinate = cc.%s
+		FROM SEQ_GeneTrap g, SEQ_Coord_Cache cc
+		WHERE g._Sequence_key = cc._Sequence_key
+			AND g._Sequence_key IN (%s)'''
+	for sublist in splitList (setToStart, 225):
+		update (cmd1 % ('startCoordinate',
+			','.join (map(str, sublist)) ))
+	LOGGER.log ('diag', 'Set point coord = start for %d sequences' % \
+		len(setToStart))
+
+	for sublist in splitList (setToEnd, 225):
+		update (cmd1 % ('endCoordinate',
+			','.join (map(str, sublist)) ))
+	LOGGER.log ('diag', 'Set point coord = end for %d sequences' % \
+		len(setToEnd))
 
 	cmd2 = '''UPDATE SEQ_GeneTrap SET pointCoordinate = null 
-		WHERE _Sequence_key = %d'''
-	for seqKey in toNull:
-		update (cmd2 % seqKey)
-	LOGGER.log ('diag',
-		'Changed to null point coordinate for %d sequences' % \
+		WHERE _Sequence_key IN (%s)'''
+	for sublist in splitList (toNull, 225):
+		update (cmd2 % ','.join (map(str, sublist)) )
+	LOGGER.log ('diag', 'Set point coord = null for %d sequences' % \
 		len(toNull))
 
 	LOGGER.log ('diag',
 		'Left point coordinates as-is for %d sequences' % \
-		(len(results) - len(toSet) - len(toNull)) )
+		(len(results) - len(setToStart) - len(setToEnd) - len(toNull))
+		)
 
-	if toSet or toNull:
+	if setToStart or setToEnd or toNull:
 		flagTable ('SEQ_GeneTrap')
+	return
+
+###------------------------------------------------------------------------###
+
+def dropIndexes (table):
+	# Purpose: drop the indexes on 'table' in the database (to help the
+	#	performance of data updates)
+	# Returns: nothing
+	# Assumes: we have permissions to drop indexes
+	# Effects: drops indexes in the database
+	# Throws: propagates exception from bailout() if any part fails
+	#	(index removal, bcp in, index generation)
+
+	schema = os.environ['MGD_DBSCHEMADIR']
+	dropIndexCmd = '%s/index/%s_drop.object' % (schema, table)
+
+	(stdout, stderr, exitcode) = runCommand.runCommand (dropIndexCmd)
+	if (exitcode):
+		bailout (
+		'drop index on %s failed with exit code: %d -- stderr: %s' % (
+			table, exitcode, stderr), False)
+	return
+
+###------------------------------------------------------------------------###
+
+def addIndexes (table):
+	# Purpose: add the indexes on 'table' in the database
+	# Returns: nothing
+	# Assumes: we have permissions to add indexes
+	# Effects: adds indexes in the database
+	# Throws: propagates exception from bailout() if any part fails
+	#	(index removal, bcp in, index generation)
+
+	schema = os.environ['MGD_DBSCHEMADIR']
+	addIndexCmd = '%s/index/%s_create.object' % (schema, table)
+
+	(stdout, stderr, exitcode) = runCommand.runCommand (addIndexCmd)
+	if (exitcode):
+		bailout (
+		'add index on %s failed with exit code: %d -- stderr: %s' % (
+			table, exitcode, stderr), False)
+	return
+
+###------------------------------------------------------------------------###
+
+def bcpin (table, filename):
+	# Purpose: use Sybase's bcp (bulk copy) utility to load the contents
+	#	of 'file' into the specified database 'table' quickly
+	# Returns: nothing
+	# Assumes: we have write access to the table
+	# Effects: loads data
+	# Throws: propagates exception from bailout() if any part fails
+	#	(index removal, bcp in, index generation)
+
+	schema = os.environ['MGD_DBSCHEMADIR']
+
+	mgiDbUtils = os.environ['MGI_DBUTILS']
+	server = os.environ['MGD_DBSERVER']
+	database = os.environ['MGD_DBNAME']
+
+	bcpCmd = '%s/bin/bcpin.csh %s %s %s %s %s "\\t" "\\n"' % (mgiDbUtils,
+		server, database, table, OUTPUTDIR, filename)
+
+	dropIndexes(table)
+
+	(stdout, stderr, exitcode) = runCommand.runCommand (bcpCmd)
+	if (exitcode):
+		bailout (
+		'bcp into %s failed with exit code: %d -- stderr: %s' % (
+			table, exitcode, stderr), False)
+
+	addIndexes(table)
 	return
 
 ###------------------------------------------------------------------------###
@@ -424,8 +519,11 @@ def initLogger ():
 	#	module
 	# Returns: nothing
 	# Assumes: we can query the database
-	# Effects: queries the database, initializes aloMarkerLogger.py
+	# Effects: queries the database, initializes aloMarkerLogger.py,
+	#	caches allele and marker symbols in global variables by key
 	# Throws: propagates all exceptions from db.sql()
+
+	global ALLELE_SYMBOLS, MARKER_SYMBOLS
 
 	# allele keys and symbols
 
@@ -441,6 +539,9 @@ def initLogger ():
 	LOGGER.log ('diag', 'Retrieved %d allele symbols (for reporting)' % \
 		len(alleles))
 
+	alleles[None] = None
+	ALLELE_SYMBOLS = alleles
+
 	# marker keys and symbols (current and interim)
 
 	cmd2 = '''SELECT _Marker_key, symbol
@@ -455,6 +556,9 @@ def initLogger ():
 	aloMarkerLogger.setMarkerSymbols(markers)
 	LOGGER.log ('diag', 'Retrieved %d marker symbols (for reporting)' % \
 		len(markers))
+
+	markers[None] = None
+	MARKER_SYMBOLS = markers
 
 	# reference keys and J: numbers for mixed references
 
@@ -485,7 +589,7 @@ def initLogger ():
 
 	cmd4 = '''SELECT s._Sequence_key, a.accID
 		FROM SEQ_Allele_Assoc s,
-			ACC_Accession a
+			ACC_Accession a (index idx_Object_MGIType_key)
 		WHERE s._Sequence_key = a._Object_key
 			AND a._MGIType_key = 19
 			AND a.private = 0
@@ -1319,6 +1423,8 @@ def updateMarkerAssoc (
 	cmd = 'DELETE FROM ALL_Marker_Assoc WHERE _Assoc_key IN (%s)'
 	for sublist in sublists:
 		update (cmd % ','.join (map (str, sublist)) )
+		for alleleKey in sublist:
+			clearLoadedNote(alleleKey)
 	LOGGER.log ('diag',
 		'Removed %d previously loaded allele/marker associations' % \
 		len(toDelete))
@@ -1329,18 +1435,22 @@ def updateMarkerAssoc (
 
 	# apply the additions, getting a new assoc key at each step
 
-	cmd1 = '''INSERT ALL_Marker_Assoc
-			(_Assoc_key, _Allele_key, _Marker_key, _Qualifier_key,
-			_Status_key)
-		VALUES (%d, %d, %d, %d, %d)'''
+	filename = 'allMarkerAssoc.bcp'
+	fp = open (os.path.join (OUTPUTDIR, filename), 'w')
 
 	for (alleleKey, markerKey) in toAdd:
 		assocKey = nextAssocKey()
-		update (cmd1 % (assocKey, alleleKey, markerKey, notApp,
-			loadedTerm) )
+		fp.write ('%d\t%d\t%d\t%d\t\t%d\t%d\t%d\t%s\t%s\n' % (
+			assocKey, alleleKey, markerKey, notApp, loadedTerm,
+			USER, USER, NOW, NOW) )
 
-	LOGGER.log ('diag', 'Added %d new allele/marker associations' % \
-		len(toAdd))
+	fp.close()
+	LOGGER.log ('diag', 'Wrote %d allele/marker associations to bcp file'\
+		% len(toAdd))
+
+	bcpin ('ALL_Marker_Assoc', filename)
+	LOGGER.log ('diag', 'Added %d new allele/marker associations by bcp'\
+		% len(toAdd))
 
 	changed = 0
 	for (alleleKey, markerKey) in toAdd:
@@ -1348,14 +1458,17 @@ def updateMarkerAssoc (
 			changed = changed + 1
 
 	LOGGER.log ('diag',
-	'Set %d type A molecular notes (loaded association based on overlap)'\
+	'Identified %d new type A molecular notes (loaded association based on overlap)'\
 		% changed)
 
 	# if we applied any updates, we need to refresh the cached marker keys
 	# in the allele table
 
 	if toAdd or toDelete:
+		# Would dropping and recreating indexes help performance here?
+		# dropIndexes('ALL_Allele')
 		update ('EXEC ALL_cacheMarker')
+		# addIndexes('ALL_Allele')
 		LOGGER.log ('diag', 'Ran ALL_cacheMarker stored procedure')
 		flagTable ('ALL_Marker_Assoc')
 		flagTable ('ALL_Allele')
@@ -1379,18 +1492,15 @@ def updateSymbols (
 	current = []	# list of dictionaries for current symbols (results
 			# from 'cmd' below)
 
+	invalidatedKey = 4268546		# term: "Curator Invalidated"
+
 	cmd = '''SELECT a._Allele_key,
-			a.symbol AS alleleSymbol,
-			m.symbol AS markerSymbol,
-			t.term AS status
+			ma._Marker_key,
+			ma._Status_key
 		FROM ALL_Allele a,
-			ALL_Marker_Assoc ma,
-			MRK_Marker m,
-			VOC_Term t
+			ALL_Marker_Assoc ma
 		WHERE a._Allele_key IN (%s)
-			AND ma._Status_key *= t._Term_key
-			AND a._Allele_key *= ma._Allele_key
-			AND ma._Marker_key *= m._Marker_key'''
+			AND a._Allele_key *= ma._Allele_key'''
 
 	# break 'alleles' into smaller lists so we don't go beyond Sybase
 	# limits; run the queries, and join the results together in 'current'
@@ -1400,9 +1510,23 @@ def updateSymbols (
 		results = db.sql (cmd % ','.join (map (str, sublist)), 'auto')
 		current = current + results
 
+	# pick up already-cached symbols
+	for row in current:
+		row['alleleSymbol'] = ALLELE_SYMBOLS[row['_Allele_key']]
+		row['markerSymbol'] = MARKER_SYMBOLS[row['_Marker_key']]
+
 	LOGGER.log ('diag', 'Retrieved %d allele symbols' % len(current))
 
-	cmd = 'UPDATE ALL_Allele SET symbol = "%s" WHERE _Allele_key = %d'
+	# try to tweak performance by throwing the new allele symbols in a
+	# temp table with no indexes, then just do a single update statement
+	# to apply the changes to ALL_Allele
+
+#	cmd = 'UPDATE ALL_Allele SET symbol = "%s" WHERE _Allele_key = %d'
+	cmd = 'INSERT #tmp_allSym (symbol, _Allele_key) VALUES ("%s", %d)'
+
+	update ('''CREATE TABLE #tmp_allSym (
+		_Allele_key int not null,
+		symbol varchar(60) not null)''')
 
 	# now, loop through all the alleles and update each individually
 
@@ -1413,7 +1537,7 @@ def updateSymbols (
 		alleleKey = row['_Allele_key']
 		alleleSymbol = row['alleleSymbol']
 		markerSymbol = row['markerSymbol']
-		status = row['status']
+		status = row['_Status_key']
 		originalSymbol = alleleSymbol
 
 		# We want to get down to the base allele symbol, so trim off
@@ -1429,7 +1553,7 @@ def updateSymbols (
 		# If we have a valid marker association, prepend the marker
 		# symbol and superscript the allele symbol portion.
 
-		if (status != 'Curator Invalidated') and markerSymbol:
+		if (status != invalidatedKey) and markerSymbol:
 			alleleSymbol = '%s<%s>' % (markerSymbol, alleleSymbol)
 
 		if (originalSymbol != alleleSymbol):
@@ -1439,9 +1563,16 @@ def updateSymbols (
 			asIs = asIs + 1
 
 	if updated:
+		update ('''create unique index #index1
+			on #tmp_allSym (_Allele_key, symbol)''')
+		update ('''UPDATE ALL_Allele
+			SET symbol = t.symbol
+			FROM ALL_Allele a, #tmp_allSym t
+			WHERE a._Allele_key = t._Allele_key''')
 		flagTable ('ALL_Allele')
 	LOGGER.log ('diag', 'Updated %d allele symbols' % updated)
 	LOGGER.log ('diag', 'Left %d allele symbols as-is (for alleles with altered marker associations)' % asIs)
+	update ('DROP TABLE #tmp_allSym')
 	return
 
 ###------------------------------------------------------------------------###
@@ -1630,13 +1761,15 @@ def flagMixedAlleles():
 	for alleleKey in setMixed:
 		if setMolecularNote(alleleKey, NOTE_D):
 			changed = changed + 1
-	LOGGER.log ('diag', 'Set %d type D molecular notes (mixed allele)' % \
+	LOGGER.log ('diag', 'Identified %d new type D molecular notes (mixed allele)' % \
 		changed)
 
 	# clear alleles which are no longer mixed
 
 	for sublist in splitList (clearMixed):
 		update (cmd % (0, ','.join (map (str, sublist)) ) )
+		for alleleKey in sublist:
+			clearLoadedNote(alleleKey)
 	LOGGER.log ('diag', 'Removed isMixed flag for %d alleles' % \
 		len(clearMixed))
 
@@ -1705,9 +1838,7 @@ def setupNoteCache ():
 		FROM MGI_Note
 		WHERE _NoteType_key = 1021
 			AND _MGIType_key = 11
-			AND _ModifiedBy_key NOT IN (SELECT _User_key
-				FROM MGI_User
-				WHERE login LIKE "%load")''',
+			AND _ModifiedBy_key != 1480''',		# alomrkload
 
 		# loaded notes
 		'''SELECT n._Object_key, n._Note_key, c.note
@@ -1715,9 +1846,7 @@ def setupNoteCache ():
 			MGI_NoteChunk c
 		WHERE n._NoteType_key = 1021
 			AND n._MGIType_key = 11
-			AND n._ModifiedBy_key IN (SELECT _User_key
-				FROM MGI_User
-				WHERE login LIKE "%load")
+			AND n._ModifiedBy_key = 1480		-- alomrkload
 			AND n._Note_key = c._Note_key
 		ORDER BY c._Note_key, c.sequenceNum''',
 
@@ -1754,6 +1883,10 @@ def setupNoteCache ():
 ###------------------------------------------------------------------------###
 
 ALREADY_SET = {}		# tracks allele keys where we set a note
+CHUNKS_TO_DELETE = []		# note keys for which to delete chunks
+NOTES_TO_DELETE = []		# note keys for whole notes to be deleted
+NOTES_TO_ADD = []		# list of (note key, allele key) to add
+CHUNKS_TO_ADD = []		# list of (note key, seq num, chunk) to add
 
 def setMolecularNote (alleleKey, noteChunks):
 	# Purpose: set the given molecular note (in 'noteChunks') for the
@@ -1765,6 +1898,7 @@ def setMolecularNote (alleleKey, noteChunks):
 	# Throws: propagates any exceptions from db.sql()
 
 	global NEXT_NOTE_KEY, ALREADY_SET
+	global CHUNKS_TO_DELETE, NOTES_TO_ADD, CHUNKS_TO_ADD
 
 	# if this allele has a curated molecular note, skip the update
 	if CURATED_NOTES.has_key(alleleKey):
@@ -1784,29 +1918,118 @@ def setMolecularNote (alleleKey, noteChunks):
 			return False
 
 		noteKey = LOADED_NOTES[alleleKey][0]
-		update ('DELETE FROM MGI_NoteChunk WHERE _Note_key = %d' % \
-			noteKey)
-		createNote = False	# can re-use the existing note
+		CHUNKS_TO_DELETE.append (noteKey)
 	else:
 		noteKey = NEXT_NOTE_KEY
 		NEXT_NOTE_KEY = NEXT_NOTE_KEY + 1
-		createNote = True	# need a new note
-
-	if createNote:
-		cmd = '''INSERT MGI_Note (_Note_key, _Object_key,
-			_MGIType_key, _NoteType_key)
-			VALUES (%d, %d, 11, 1021)''' % (noteKey, alleleKey)
-		update(cmd)
-		flagTable ('MGI_Note')
+		NOTES_TO_ADD.append ( (noteKey, alleleKey) )
 
 	i = 1
 	for chunk in noteChunks:
-		cmd = '''INSERT MGI_NoteChunk (_Note_key, sequenceNum, note)
-			VALUES (%d, %d, "%s")''' % (noteKey, i, chunk)
-		update(cmd)
+		CHUNKS_TO_ADD.append ( (noteKey, i, chunk) )
 		i = i + 1
-	flagTable ('MGI_NoteChunk')
 	return True
+
+###------------------------------------------------------------------------###
+
+def clearLoadedNote(alleleKey):
+	# Purpose: delete the molecular note for 'alleleKey', if it was a
+	#	loaded note
+	# Returns: True if the note will be deleted, False if not
+	# Assumes: nothing
+	# Effects: updates global NOTES_TO_DELETE
+	# Throws: nothing
+
+	global NOTES_TO_DELETE, LOADED_NOTES
+
+	# if the allele's note was a curated one, do not delete it
+	if CURATED_NOTES.has_key(alleleKey):
+		return False
+
+	# if the allele does not have a loaded note, there's nothing to delete
+	if not LOADED_NOTES.has_key(alleleKey):
+		return False
+
+	# if we set a note for the allele during this run, do not delete the
+	# new note
+	if ALREADY_SET.has_key(alleleKey):
+		return False
+
+	# this note will be deleted in a batch later on; for now, just add it
+	# to the list to delete and note that it's no longer going to exist
+
+	NOTES_TO_DELETE.append(alleleKey)
+	del LOADED_NOTES[alleleKey]
+
+	return True
+
+###------------------------------------------------------------------------###
+
+def updateMolecularNotes():
+	# Purpose: update alleles' molecular notes as needed, according to the
+	#	global variables CHUNKS_TO_DELETE, NOTES_TO_ADD, and
+	#	CHUNKS_TO_ADD
+	# Returns: nothing
+	# Assumes: we can alter the database contents
+	# Effects: updates MGI_Note and MGI_NoteChunk in the database
+	# Throws: propagates any exceptions from update() and bcpin()
+
+	noteFile = 'MGI_Note.bcp'
+	chunkFile = 'MGI_NoteChunk.bcp'
+	hasNotes = len(NOTES_TO_ADD) > 0
+	hasChunks = len(CHUNKS_TO_ADD) > 0
+
+	if hasNotes:
+		fp = open (os.path.join (OUTPUTDIR, noteFile), 'w')
+		for (noteKey, alleleKey) in NOTES_TO_ADD:
+			fp.write ('%d\t%d\t11\t1021\t%d\t%d\t%s\t%s\n' % (
+				noteKey, alleleKey, USER, USER, NOW, NOW) )
+		fp.close()
+
+	if hasChunks:
+		fp = open (os.path.join (OUTPUTDIR, chunkFile), 'w')
+		for (noteKey, seqNum, chunk) in CHUNKS_TO_ADD:
+			fp.write ('%d\t%d\t"%s"\t%d\t%d\t%s\t%s\n' % (
+				noteKey, seqNum, chunk, USER, USER, NOW, NOW))
+		fp.close()
+
+	if hasNotes or hasChunks:
+		LOGGER.log ('diag', 'Wrote bcp files for molecular notes')
+	else:
+		LOGGER.log ('diag', 'No new molecular notes')
+
+	if CHUNKS_TO_DELETE:
+		sublists = splitList (CHUNKS_TO_DELETE, 200)
+		for sublist in sublists:
+			update ('''DELETE FROM MGI_NoteChunk 
+				WHERE _Note_key IN (%s)''' % (','.join (
+					map (str, sublist) )) )
+		LOGGER.log ('diag',
+			'Removed chunks for %d old molecular notes' % \
+			len(CHUNKS_TO_DELETE))
+		flagTable ('MGI_NoteChunk')
+
+	if NOTES_TO_DELETE:
+		sublists = splitList (NOTES_TO_DELETE, 200)
+		for sublist in sublists:
+			update ('''DELETE FROM MGI_Note
+				WHERE _Note_key IN (%s)''' % (','.join (
+					map (str, sublist) )) )
+		LOGGER.log ('diag',
+			'Removed whole notes for %d old molecular notes' % \
+			len(NOTES_TO_DELETE))
+		flagTable ('MGI_Note')
+
+	if hasNotes:
+		bcpin ('MGI_Note', noteFile)
+		LOGGER.log ('diag', 'Loaded molecular notes by bcp')
+		flagTable ('MGI_Note')
+
+	if hasChunks:
+		bcpin ('MGI_NoteChunk', chunkFile)
+		LOGGER.log ('diag', 'Loaded molecular note chunks by bcp')
+		flagTable ('MGI_NoteChunk')
+	return
 
 ###------------------------------------------------------------------------###
 
@@ -1862,8 +2085,8 @@ def fixMolecularNotes(mixedAlleles):
 		elif setMolecularNote (row['_Allele_key'], NOTE_C):
 			countC = countC + 1
 			
-	LOGGER.log ('diag', 'Set %d type B molecular notes (single good hit to genome, no marker association)' % countB)
-	LOGGER.log ('diag', 'Set %d type C molecular notes (zero or multiple good hits to genome)' % countC)
+	LOGGER.log ('diag', 'Identified %d new type B molecular notes (single good hit to genome, no marker association)' % countB)
+	LOGGER.log ('diag', 'Identified %d new type C molecular notes (zero or multiple good hits to genome)' % countC)
 	return
 
 ###------------------------------------------------------------------------###
@@ -2121,6 +2344,9 @@ def main():
 	# with a marker
 
 	fixMolecularNotes(mixedAlleles)
+
+	# apply the cached changes to molecular notes
+	updateMolecularNotes()
 
 	# update statistics on any tables we altered, to boost performance
 
