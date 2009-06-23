@@ -1989,7 +1989,7 @@ def updateMolecularNotes():
 	if hasChunks:
 		fp = open (os.path.join (OUTPUTDIR, chunkFile), 'w')
 		for (noteKey, seqNum, chunk) in CHUNKS_TO_ADD:
-			fp.write ('%d\t%d\t"%s"\t%d\t%d\t%s\t%s\n' % (
+			fp.write ('%d\t%d\t%s\t%d\t%d\t%s\t%s\n' % (
 				noteKey, seqNum, chunk, USER, USER, NOW, NOW))
 		fp.close()
 
