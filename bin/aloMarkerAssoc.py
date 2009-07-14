@@ -945,6 +945,7 @@ def findSequenceLengths():
 	for row in results:
 		lengths[row['_Sequence_key']] = row['length']
 	LOGGER.log ('diag', 'Retrieved %d sequence lengths' % len(lengths))
+
 	return lengths
 
 ###------------------------------------------------------------------------###
@@ -1075,7 +1076,8 @@ def updateRepSeqs (
 	# Purpose: update which sequence is flagged as 'representative' for
 	#	each allele
 	# Returns: dictionary which maps from each sequence key to a list of
-	#	its allele keys
+	#	its allele keys; also dictionary mapping allele key to its
+	#	representative sequence key
 	# Assumes: db module has been initialized
 	# Effects: queries the database, updates data in the database
 	# Throws: propagates any exceptions from db.sql()
@@ -1125,6 +1127,7 @@ def updateRepSeqs (
 	asIs = 0	# integer; count of representative seqs left as-is
 	demoted = []	# list of integer assoc keys to remove rep flag
 	promoted = []	# list of integer assoc keys to add rep flag
+	repSeqs = {}	# maps allele key to its representative seq key
 
 	# walk through each allele and its associated sequences
 
@@ -1143,6 +1146,11 @@ def updateRepSeqs (
 
 		newRep = getRepSeq (associations, singleMarkers,
 			multiMarkers, noMarkers, mixedAlleles, lengths)
+
+		if newRep != None:
+			repSeqs[alleleKey] = newRep['_Sequence_key']
+		else:
+			repSeqs[alleleKey] = None
 
 		# if they're different, we need to promote one and demote the
 		# other (assuming they're non-null)
@@ -1192,7 +1200,7 @@ def updateRepSeqs (
 
 	if demoted or promoted:
 		flagTable ('SEQ_Allele_Assoc')
-	return seqToAllele
+	return seqToAllele, repSeqs
 
 ###------------------------------------------------------------------------###
 
@@ -1257,7 +1265,8 @@ def nextAssocKey():
 def updateMarkerAssoc (
 	singleMarkers, 		# dictionary; seq keys map to lists w/1 mrk
 	seqToAllele,		# dictionary; seq keys to list of allele keys
-	mixedAlleles		# dictionary; allele keys which are mixed
+	mixedAlleles,		# dictionary; allele keys which are mixed
+	repSeqs			# dictionary; allele keys to rep seq key
 	):
 	# Purpose: update the allele/marker associations
 	# Returns: list of integer allele keys which had changed marker
@@ -1272,7 +1281,6 @@ def updateMarkerAssoc (
 
 	notApp = lookupTerm ('Marker-Allele Association Qualifier',
 		'Not Specified')
-#		'Not Applicable')
 	loadedTerm = lookupTerm ('Marker-Allele Association Status', 'Loaded')
 
 	# get set of alleles associated with nomen markers (the load should 
@@ -1301,6 +1309,13 @@ def updateMarkerAssoc (
 		mrkKey = markers[0]
 
 		for alleleKey in allKeys:
+			# if this sequence is not the representative for this
+			# allele, then skip it
+
+			if repSeqs.has_key(alleleKey) and \
+				repSeqs[alleleKey] != seqKey:
+					continue
+
 			# 1. if this allele is associated with a nomen marker
 			# then skip it; 2. if we already have this allele key
 			# and it's for another marker, then report the
@@ -1593,7 +1608,7 @@ def anySeparate (
 	# do this, we will walk two counters through 'seqs' in a nested loop.
 
 	i = 0			# outer counter; first seq to compare
-	threshold = 250		# amount to pad the ends of each sequence and
+	threshold = 500		# amount to pad the ends of each sequence and
 				# ...have them considered to be overlapping
 	lenSeqs = len(seqs)	# number of sequences
 
@@ -1671,7 +1686,9 @@ def flagMixedAlleles():
 		len(curated))
 
 	# Get all alleles, their associated sequences, the coordinates for
-	# those sequences, and their gene trap tag methods.
+	# those sequences, and their gene trap tag methods.  This only
+	# considers sequences which have coordinates, because of the join to
+	# the coordinate cache table.
 
 	cmd = '''SELECT a._Allele_key,
 			a.isMixed,
@@ -1711,7 +1728,8 @@ def flagMixedAlleles():
 
 	# An allele is mixed if (using only DNA-based seq tags) it...
 	# 1. has >1 sequence, and
-	# 2. at least one pair of sequences does not overlap within 500bp
+	# 2. at least one pair of sequences does not overlap within a certain
+	#	threshold (we allow a buffer at each end of each sequence)
 
 	clearMixed = []		# list of allele keys to clear the isMixed bit
 	setMixed = []		# list of allele keys to set the isMixed bit
@@ -2327,14 +2345,14 @@ def main():
 
 	# update the choice of representative sequence for each allele
 
-	seqToAllele = updateRepSeqs (singleMarkers, multiMarkers, noMarkers,
-		mixedAlleles, seqLengths)
+	seqToAllele, repSeqs = updateRepSeqs (singleMarkers, multiMarkers,
+		noMarkers, mixedAlleles, seqLengths)
 
 	# update the marker/allele associations, based on sequence overlaps;
 	# also handle molecular note type A
 
 	revisedAlleles = updateMarkerAssoc (singleMarkers, seqToAllele,
-		mixedAlleles)
+		mixedAlleles, repSeqs)
 
 	# update allele symbols to incorporate the new marker associations
 
