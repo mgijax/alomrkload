@@ -1886,10 +1886,10 @@ def setupNoteCache ():
 		objectKey = row['_Object_key']
 		if LOADED_NOTES.has_key(objectKey):
 			(key, notes) = LOADED_NOTES[objectKey]
-			notes.append (row['note'])
+			LOADED_NOTES[objectKey] = (key, notes + row['note'])
 		else:
 			LOADED_NOTES[objectKey] = (row['_Note_key'],
-				[ row['note'] ])
+				row['note'])
 
 	# remember the next note key value that we should use as we add more
 	# molecular notes
@@ -1932,7 +1932,7 @@ def setMolecularNote (alleleKey, noteChunks):
 	# if this allele already has a loaded molecular note, we can either
 	# keep it (if the same) or delete its chunks (if different)
 	if LOADED_NOTES.has_key(alleleKey):
-		if LOADED_NOTES[alleleKey][1] == noteChunks:
+		if LOADED_NOTES[alleleKey][1].strip() == ''.join(noteChunks):
 			return False
 
 		noteKey = LOADED_NOTES[alleleKey][0]
