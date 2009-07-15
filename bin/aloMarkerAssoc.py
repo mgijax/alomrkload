@@ -482,7 +482,7 @@ def addIndexes (table):
 
 ###------------------------------------------------------------------------###
 
-def bcpin (table, filename):
+def bcpin (table, filename, recordCount):
 	# Purpose: use Sybase's bcp (bulk copy) utility to load the contents
 	#	of 'file' into the specified database 'table' quickly
 	# Returns: nothing
@@ -490,6 +490,11 @@ def bcpin (table, filename):
 	# Effects: loads data
 	# Throws: propagates exception from bailout() if any part fails
 	#	(index removal, bcp in, index generation)
+
+	# if 'recordCount' is less than 'threshold', then do not drop and
+	# recreate the indexes.  just let slow bcp proceed for small numbers
+	# of records.
+	threshold = 5000
 
 	schema = os.environ['MGD_DBSCHEMADIR']
 
@@ -500,7 +505,8 @@ def bcpin (table, filename):
 	bcpCmd = '%s/bin/bcpin.csh %s %s %s %s %s "\\t" "\\n"' % (mgiDbUtils,
 		server, database, table, OUTPUTDIR, filename)
 
-	dropIndexes(table)
+	if recordCount > threshold:
+		dropIndexes(table)
 
 	(stdout, stderr, exitcode) = runCommand.runCommand (bcpCmd)
 	if (exitcode):
@@ -508,7 +514,8 @@ def bcpin (table, filename):
 		'bcp into %s failed with exit code: %d -- stderr: %s' % (
 			table, exitcode, stderr), False)
 
-	addIndexes(table)
+	if recordCount > threshold:
+		addIndexes(table)
 	return
 
 ###------------------------------------------------------------------------###
@@ -1463,7 +1470,7 @@ def updateMarkerAssoc (
 	LOGGER.log ('diag', 'Wrote %d allele/marker associations to bcp file'\
 		% len(toAdd))
 
-	bcpin ('ALL_Marker_Assoc', filename)
+	bcpin ('ALL_Marker_Assoc', filename, len(toAdd))
 	LOGGER.log ('diag', 'Added %d new allele/marker associations by bcp'\
 		% len(toAdd))
 
@@ -2039,12 +2046,12 @@ def updateMolecularNotes():
 		flagTable ('MGI_Note')
 
 	if hasNotes:
-		bcpin ('MGI_Note', noteFile)
+		bcpin ('MGI_Note', noteFile, len(NOTES_TO_ADD))
 		LOGGER.log ('diag', 'Loaded molecular notes by bcp')
 		flagTable ('MGI_Note')
 
 	if hasChunks:
-		bcpin ('MGI_NoteChunk', chunkFile)
+		bcpin ('MGI_NoteChunk', chunkFile, len(CHUNKS_TO_ADD))
 		LOGGER.log ('diag', 'Loaded molecular note chunks by bcp')
 		flagTable ('MGI_NoteChunk')
 	return
