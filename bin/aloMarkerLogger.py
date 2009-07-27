@@ -451,13 +451,12 @@ class NomenMarkerWriter (AloMarkerLogWriterHTML):
 
 class MultiMarkerWriter (AloMarkerLogWriterHTML):
 	# Is: an AloMarkerLogWriterHTML subclass that specializes in writing
-	#	an HTML table showing alleles which have an association with
-	#	an existing marker and which overlaps a different marker
-	#	according to its coordinates
+	#	an HTML table showing alleles which would map to multiple
+	#	markers, according to its coordinates
 	# Has: see AloMarkerLogWriter
 	# Does: see AloMarkerLogWriter
 	# Assumes: log entries are tuples with four items:  allele key,
-	#	allele symbol, existing marker key, overlapped marker key
+	#	sequence key, list of marker keys
 
 	def writeHeader (self, fp):
 		# Purpose: (private) write an HTML table header row to 'fp'
@@ -466,8 +465,8 @@ class MultiMarkerWriter (AloMarkerLogWriterHTML):
 		# Effects: writes a line to 'fp'
 		# Throws: propagates any exceptions from writing to 'fp'
 
-		fp.write ('<TR><TH>Allele</TH><TH>Current Marker</TH>')
-		fp.write ('<TH>Overlap Marker</TH></TR>\n')
+		fp.write ('<TR><TH>Allele</TH><TH>Representative Sequence</TH>')
+		fp.write ('<TH>Overlapped Markers</TH></TR>\n')
 		return
 
 	def writeEntry (self, fp, entry):
@@ -478,16 +477,21 @@ class MultiMarkerWriter (AloMarkerLogWriterHTML):
 		# Effects: writes a line to 'fp'
 		# Throws: propagates any exceptions from writing to 'fp'
 		# Notes: writes a three-column row (allele symbol linked to
-		#	allele detail page, existing associated marker symbol
-		#	linked to marker detail page, overlapped marker symbol
-		#	linked to marker detail page)
+		#	allele detail page, sequence ID linked to sequence
+		#	detail page, overlapped marker symbols linked to
+		#	marker detail pages)
 
 		fp.write ('<TR><TD><A HREF="%s%s">%s</TD>' % (
-			ALLELE_DETAIL, entry[0], entry[1]) )
+			ALLELE_DETAIL, entry[0], alleleSymbol(entry[0])) )
 		fp.write ('<TD><A HREF="%s%s">%s</A></TD>' % (
-			MARKER_DETAIL, entry[2], markerSymbol(entry[2])) )
-		fp.write ('<TD><A HREF="%s%s">%s</A></TD></TR>\n' % (
-			MARKER_DETAIL, entry[3], markerSymbol(entry[3])) )
+			SEQUENCE_DETAIL, entry[1], seqID(entry[1])) )
+		fp.write ('<TD>')
+		for mrkKey in entry[2]:
+			fp.write ('<A HREF="%s%s">%s</A>' % (
+				MARKER_DETAIL, mrkKey, markerSymbol(mrkKey)) )
+			if mrkKey != entry[2][-1]:
+				fp.write ('<BR>')
+		fp.write ('</TD></TR>\n')
 		return
 
 ###------------------------------------------------------------------------###

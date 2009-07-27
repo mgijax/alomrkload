@@ -680,6 +680,9 @@ def getSequences():
 	pcCt = 0	# number of sequences with point coordinates
 
 	for row in results:
+		# should we be comparing with markers on the opposite strand?
+		flipStrand = False
+
 		# if we have a DNA-based sequence tag method, and if the
 		# vector end is 'upstream', then we need to reverse the strand
 		# for the sake of comparison with markers
@@ -687,11 +690,22 @@ def getSequences():
 		if 3983002 <= row['_TagMethod_key'] <= 3983007:
 			if (row['_VectorEnd_key'] == upstream) and \
 			    (row['_ReverseComp_key'] == notRevComp):
-				if row['strand'] == '+':
-					row['strand'] = '-'
-				else:
-					row['strand'] = '+'
-				flipCt = flipCt + 1
+				    flipStrand = True
+
+		# if we have an RNA-based sequence tag method and if the
+		# reverse complement flag is not set, then reverse the strand
+		# for comparison with marker coordinates
+
+		elif row['_TagMethod_key'] in (3983000, 3983001):
+			if (row['_ReverseComp_key'] == notRevComp):
+				flipStrand = True
+
+		if flipStrand:
+			if row['strand'] == '+':
+				row['strand'] = '-'
+			else:
+				row['strand'] = '+'
+			flipCt = flipCt + 1
 
 		# if we have a point coordinate, we should use that for the
 		# comparisons
@@ -1273,7 +1287,8 @@ def updateMarkerAssoc (
 	singleMarkers, 		# dictionary; seq keys map to lists w/1 mrk
 	seqToAllele,		# dictionary; seq keys to list of allele keys
 	mixedAlleles,		# dictionary; allele keys which are mixed
-	repSeqs			# dictionary; allele keys to rep seq key
+	repSeqs,		# dictionary; allele keys to rep seq key
+	multiMarkers		# dictionary; seq keys map to lists w/2+ mrk
 	):
 	# Purpose: update the allele/marker associations
 	# Returns: list of integer allele keys which had changed marker
@@ -1346,9 +1361,23 @@ def updateMarkerAssoc (
 
 			elif all2mrk[alleleKey] != mrkKey:
 				LOGGER.log ('Multiple Markers',
-					(alleleKey, symbols[alleleKey],
-					all2mrk[alleleKey],
-					mrkKey) )
+					(alleleKey, seqKey, markers) )
+
+	# do reporting of alleles with multi-marker sequences
+
+	for (seqKey, markers) in multiMarkers.items():
+		allKeys = seqToAllele[seqKey]
+
+		for alleleKey in allKeys:
+			# if this sequence is not the representative for this
+			# allele, then skip it
+
+			if repSeqs.has_key(alleleKey) and \
+				repSeqs[alleleKey] != seqKey:
+					continue
+
+			LOGGER.log ('Multiple Markers', (alleleKey, seqKey,
+				markers) )
 
 	# get the set of all alleles currently associated with each marker
 
@@ -1430,14 +1459,23 @@ def updateMarkerAssoc (
 			revisedAlleles[alleleKey] = 1
 		else:
 			# if the allele is already associated in the database
-			# with a different marker, we should report it
+			# with a different marker, we should:
+			# 1. just report it if the association is curated, or
+			# 2. fix it if the association was loaded
 
 			if allAssoc[alleleKey]['_Marker_key'] != markerKey:
-				LOGGER.log ('Marker Mismatch',
+				if allAssoc[alleleKey]['term'] == 'Curated':
+				    LOGGER.log ('Marker Mismatch',
 					(alleleKey,
 					allAssoc[alleleKey]['_Marker_key'],
 					markerKey,
 					allAssoc[alleleKey]['term']) )
+				else:
+				    # old assoc is already deleted by code
+				    # above (see toDelete); just add new one
+
+				    toAdd.append ( (alleleKey, markerKey) )
+				    revisedAlleles[alleleKey] = 1
 
 	# apply the deletions
 
@@ -2359,7 +2397,7 @@ def main():
 	# also handle molecular note type A
 
 	revisedAlleles = updateMarkerAssoc (singleMarkers, seqToAllele,
-		mixedAlleles, repSeqs)
+		mixedAlleles, repSeqs, multiMarkers)
 
 	# update allele symbols to incorporate the new marker associations
 
