@@ -1,3 +1,10 @@
+TAG: alomrkload-4-3-0-14
+DATE: 07-27-2009
+STAFF:  jsb
+CHANGES:
+1) revised flipping of strand for some RNA sequence tag types
+2) revised reporting of multiple markers per sequence
+
 TAG: alomrkload-4-3-0-13
 DATE: 07-15-2009
 STAFF:  jsb
