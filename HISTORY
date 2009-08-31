@@ -1,3 +1,9 @@
+TAG: alomrkload-4-3-0-15
+DATE: 08-31-2009
+STAFF:  jsb
+CHANGES:
+1) removed assumption that all sequences were associated w/ alleles
+
 TAG: alomrkload-4-3-0-14
 DATE: 07-27-2009
 STAFF:  jsb
