@@ -1327,6 +1327,12 @@ def updateMarkerAssoc (
 	mrk2all = {}	# maps marker key to list of allele keys
 
 	for (seqKey, markers) in singleMarkers.items():
+		# if this sequence has no associated alleles (rare), then
+		# skip it
+
+		if not seqToAllele.has_key(seqKey):
+			continue
+
 		allKeys = seqToAllele[seqKey]
 		mrkKey = markers[0]
 
