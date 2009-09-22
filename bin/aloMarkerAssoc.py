@@ -376,9 +376,13 @@ def setPointCoordinates ():
 			tagMethod = row['_TagMethod_key']
 
 			# if DNA-based sequence tag method...
+			# (removed consideration of Reverse Complement flag
+			# for TR9788; delete it later on once we're sure we
+			# don't want it)
 			if 3983002 <= tagMethod <= 3983007:
-				if (row['_VectorEnd_key'] == upstream) and \
-				    (row['_ReverseComp_key'] == revComp):
+#				if (row['_VectorEnd_key'] == upstream) and \
+#				    (row['_ReverseComp_key'] == revComp):
+				if (row['_VectorEnd_key'] == upstream):
 					pointCoord = conditional (
 						strand == '+', upper, lower)
 				else:
@@ -676,36 +680,39 @@ def getSequences():
 	LOGGER.log ('diag', 'Got %d gene trap sequences with coordinates' % \
 		len(results))
 
-	flipCt = 0	# number of sequences where we flipped the strand
+	# strand-flipping logic removed for TR9788; we can delete it later on
+	# once we're more sure we don't want it back...
+
+#	flipCt = 0	# number of sequences where we flipped the strand
 	pcCt = 0	# number of sequences with point coordinates
 
 	for row in results:
-		# should we be comparing with markers on the opposite strand?
-		flipStrand = False
-
-		# if we have a DNA-based sequence tag method, and if the
-		# vector end is 'upstream', then we need to reverse the strand
-		# for the sake of comparison with markers
-
-		if 3983002 <= row['_TagMethod_key'] <= 3983007:
-			if (row['_VectorEnd_key'] == upstream) and \
-			    (row['_ReverseComp_key'] == notRevComp):
-				    flipStrand = True
-
-		# if we have an RNA-based sequence tag method and if the
-		# reverse complement flag is not set, then reverse the strand
-		# for comparison with marker coordinates
-
-		elif row['_TagMethod_key'] in (3983000, 3983001):
-			if (row['_ReverseComp_key'] == notRevComp):
-				flipStrand = True
-
-		if flipStrand:
-			if row['strand'] == '+':
-				row['strand'] = '-'
-			else:
-				row['strand'] = '+'
-			flipCt = flipCt + 1
+#		# should we be comparing with markers on the opposite strand?
+#		flipStrand = False
+#
+#		# if we have a DNA-based sequence tag method, and if the
+#		# vector end is 'upstream', then we need to reverse the strand
+#		# for the sake of comparison with markers
+#
+#		if 3983002 <= row['_TagMethod_key'] <= 3983007:
+#			if (row['_VectorEnd_key'] == upstream) and \
+#			    (row['_ReverseComp_key'] == notRevComp):
+#				    flipStrand = True
+#
+#		# if we have an RNA-based sequence tag method and if the
+#		# reverse complement flag is not set, then reverse the strand
+#		# for comparison with marker coordinates
+#
+#		elif row['_TagMethod_key'] in (3983000, 3983001):
+#			if (row['_ReverseComp_key'] == notRevComp):
+#				flipStrand = True
+#
+#		if flipStrand:
+#			if row['strand'] == '+':
+#				row['strand'] = '-'
+#			else:
+#				row['strand'] = '+'
+#			flipCt = flipCt + 1
 
 		# if we have a point coordinate, we should use that for the
 		# comparisons
@@ -715,8 +722,8 @@ def getSequences():
 			row['endCoordinate'] = row['pointCoordinate']
 			pcCt = pcCt + 1
 
-	LOGGER.log ('diag', 'Needed to swap strand on ' + \
-		'%d sequences for comparison with markers' % flipCt)
+#	LOGGER.log ('diag', 'Needed to swap strand on ' + \
+#		'%d sequences for comparison with markers' % flipCt)
 	LOGGER.log ('diag', 'Using point coordinate for comparison ' + \
 		'on %d sequences' % pcCt)
 	LOGGER.log ('diag', 'Using start/end coordinates for comparison ' + \
