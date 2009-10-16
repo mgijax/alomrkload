@@ -2034,7 +2034,8 @@ def clearLoadedNote(alleleKey):
 	# this note will be deleted in a batch later on; for now, just add it
 	# to the list to delete and note that it's no longer going to exist
 
-	NOTES_TO_DELETE.append(alleleKey)
+	noteKey = LOADED_NOTES[alleleKey][0]
+	NOTES_TO_DELETE.append(noteKey)
 	del LOADED_NOTES[alleleKey]
 
 	return True
