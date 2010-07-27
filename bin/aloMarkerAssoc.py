@@ -564,7 +564,7 @@ def initLogger ():
 	cmd2 = '''SELECT _Marker_key, symbol
 			FROM MRK_Marker
 			WHERE _Organism_key = 1
-				AND _Marker_Status_key IN (1,3)'''
+				AND _Marker_Status_key IN (1,2,3)'''
 	results2 = db.sql (cmd2, 'auto')
 
 	markers = {}
@@ -767,7 +767,8 @@ def getMarkers():
 			MRK_Marker m
 		WHERE c.startCoordinate != null
 			AND c._Marker_key = m._Marker_Key
-			AND m._Marker_Type_key IN (1, 7)'''
+			AND m._Marker_Type_key IN (1, 7)
+			AND m._Marker_Status_key IN (1,2,3)'''
 	results = db.sql (cmd, 'auto')
 	LOGGER.log ('diag', 'Retrieved %d markers with coordinates' % \
 		len(results))

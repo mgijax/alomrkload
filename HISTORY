@@ -1,3 +1,11 @@
+TAG: alomrkload-tr6839-2
+DATE: 07/27/2010
+STAFF:  lec
+CHANGES:
+1) TR6839/remove marker type 11
+   added "_Marker_Status_key in (1,2,3)" to selects
+   the withdrawn markers may contain sequence associations
+
 TAG: alomrkload-tr6839-1
 DATE: 07/14/2010
 STAFF:  lec
