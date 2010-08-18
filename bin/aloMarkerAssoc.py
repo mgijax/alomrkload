@@ -13,6 +13,12 @@
 #	optional: LOGDIR, LOG_DEBUG
 # Logs: writes log files to the current working directory, or to an alternate
 #	logging directory specified by LOGDIR
+#
+# History
+#
+# 07/13/2010    lec
+#       - TR 6839/marker types; remove marker type 11
+#
 
 import os
 import sys
@@ -558,7 +564,7 @@ def initLogger ():
 	cmd2 = '''SELECT _Marker_key, symbol
 			FROM MRK_Marker
 			WHERE _Organism_key = 1
-				AND _Marker_Status_key IN (1,3)'''
+				AND _Marker_Status_key IN (1,2,3)'''
 	results2 = db.sql (cmd2, 'auto')
 
 	markers = {}
@@ -761,7 +767,8 @@ def getMarkers():
 			MRK_Marker m
 		WHERE c.startCoordinate != null
 			AND c._Marker_key = m._Marker_Key
-			AND m._Marker_Type_key IN (1, 7, 11)'''
+			AND m._Marker_Type_key IN (1, 7)
+			AND m._Marker_Status_key IN (1,2,3)'''
 	results = db.sql (cmd, 'auto')
 	LOGGER.log ('diag', 'Retrieved %d markers with coordinates' % \
 		len(results))
@@ -1379,6 +1386,12 @@ def updateMarkerAssoc (
 	# do reporting of alleles with multi-marker sequences
 
 	for (seqKey, markers) in multiMarkers.items():
+		# if this sequence has no associated alleles (rare), then
+		# skip it
+
+		if not seqToAllele.has_key(seqKey):
+			continue
+
 		allKeys = seqToAllele[seqKey]
 
 		for alleleKey in allKeys:
@@ -1585,6 +1598,7 @@ def updateSymbols (
 
 	# pick up already-cached symbols
 	for row in current:
+		print row
 		row['alleleSymbol'] = ALLELE_SYMBOLS[row['_Allele_key']]
 		row['markerSymbol'] = MARKER_SYMBOLS[row['_Marker_key']]
 
