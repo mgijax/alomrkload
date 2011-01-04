@@ -66,10 +66,10 @@ LOG_VAL=${LOGDIR}/alomrkload.val.log
 export LOG_PROC LOG_DIAG LOG_CUR LOG_VAL
 
 # when true logs debug info to the diagnostic log
-LOG_DEBUG=false
+LOG_DEBUG=true
 
 # set to '-f' to log insert and update sql (done inline) set
-DBDEBUG=''
+DBDEBUG='-f'
 
 export LOG_DEBUG DBDEBUG
 

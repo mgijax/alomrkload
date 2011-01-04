@@ -1,3 +1,16 @@
+TAG: alomrkload-4-4-1-1
+DATE: 01/04/2011
+STAFF: sc 
+CHANGES: Changing default so we can get more info about what this load is doing
+in particular what it is updating and deleting. This change came about when this
+loaded deleted the gensat allele/marker associations because they were loaded 
+with ALL_Marker_Assoc.status of 'Loaded' instead of 'Curated'. 
+We shoule update alomrkload so it only deletes 'Loaded' alleles of type
+gene trap alleles, not ALL 'Loaded' alleles.
+1) alomrkload.config.default - set:
+LOG_DEBUG=true - to log debug info the diag log
+DBDEBUG='-f' - to log inline update sql to sql.log
+
 TAG: alomrkload-4-4-0-1
 DATE: 08/18/2010
 STAFF:  lec
