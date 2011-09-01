@@ -85,7 +85,7 @@ export LOG_DEBUG DBDEBUG
 MAIL_LOADNAME="ALO Marker Association Load"
 
 #  recipient list for mailing the curation log file (comma-separated)
-MAIL_LOG_CUR="sc"
+MAIL_LOG_CUR="mgiadmin"
 
 export MAIL_LOADNAME MAIL_LOG_CUR
 

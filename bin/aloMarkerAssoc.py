@@ -765,7 +765,8 @@ def getMarkers():
 			c.strand
 		FROM MRK_Location_Cache c,
 			MRK_Marker m
-		WHERE c.startCoordinate != null
+		WHERE c._Organism_key = 1
+			AND c.startCoordinate != null
 			AND c._Marker_key = m._Marker_Key
 			AND m._Marker_Type_key IN (1, 7)
 			AND m._Marker_Status_key IN (1,2,3)'''

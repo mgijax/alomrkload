@@ -1,3 +1,9 @@
+TAG: alomrkload-4-4-2-1
+DATE: 09/01/2011
+STAFF: lec
+CHANGES:
+1) TR10805/add _Orgranism_key = 1 to query (aloMarkerAssoc.py)
+
 TAG: alomrkload-4-4-1-1
 DATE: 01/04/2011
 STAFF: sc 
