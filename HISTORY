@@ -1,3 +1,17 @@
+TAG: alomrkload-5-0-0-1
+DATE: 07/10/2012
+STAFF: lec
+CHANGES:
+1) TR10994
+SEQ_GeneTrap gt (index idx_Sequence_key) => idx_primary
+ACC_Accession a (index idx_Object_MGIType_key) => idx_clustered
+
+TAG: alomrkload-4-4-2-2
+DATE: 01/09/2012
+STAFF: lec
+CHANGES:
+1) TR10949/fix: idx_MGIType_Object_key
+
 TAG: alomrkload-4-4-2-1
 DATE: 09/01/2011
 STAFF: lec

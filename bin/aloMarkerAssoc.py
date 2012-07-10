@@ -362,7 +362,7 @@ def setPointCoordinates ():
 			gt._TagMethod_key,
 			gt._VectorEnd_key,
 			gt._ReverseComp_key
-		FROM SEQ_GeneTrap gt (index idx_Sequence_key),
+		FROM SEQ_GeneTrap gt (index idx_primary),
 			SEQ_Coord_Cache cc (index idx_Sequence_key)
 		WHERE gt._Sequence_key *= cc._Sequence_key'''
 
@@ -606,7 +606,7 @@ def initLogger ():
 
 	cmd4 = '''SELECT s._Sequence_key, a.accID
 		FROM SEQ_Allele_Assoc s,
-			ACC_Accession a (index idx_Object_MGIType_key)
+			ACC_Accession a (index idx_clustered)
 		WHERE s._Sequence_key = a._Object_key
 			AND a._MGIType_key = 19
 			AND a.private = 0
