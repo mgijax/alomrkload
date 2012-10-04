@@ -1,3 +1,10 @@
+TAG: alomrkload-tr7106-1
+DATE: 10/04/2012
+STAFF: sc
+CHANGES: 
+1) aloMarkerAssoc.py - update to use genomicChromosome
+2) aloMarkerLogger.py  - update to use genomicChromosome
+
 TAG: alomrkload-tr7106-BP
 DATE: 10/04/2012
 STAFF: sc

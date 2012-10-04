@@ -759,7 +759,7 @@ def getMarkers():
 	# genes, pseudogenes, and microRNAs
 
 	cmd = '''SELECT c._Marker_key,
-			c.chromosome,
+			c.genomicChromosome,
 			c.startCoordinate,
 			c.endCoordinate,
 			c.strand
@@ -770,6 +770,7 @@ def getMarkers():
 			AND c._Marker_key = m._Marker_Key
 			AND m._Marker_Type_key IN (1, 7)
 			AND m._Marker_Status_key IN (1,2,3)'''
+			#AND m._Marker_key = 101344''' # Kit
 	results = db.sql (cmd, 'auto')
 	LOGGER.log ('diag', 'Retrieved %d markers with coordinates' % \
 		len(results))
