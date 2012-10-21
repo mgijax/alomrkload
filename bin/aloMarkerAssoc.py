@@ -759,7 +759,7 @@ def getMarkers():
 	# genes, pseudogenes, and microRNAs
 
 	cmd = '''SELECT c._Marker_key,
-			c.genomicChromosome,
+			c.genomicChromosome as chromosome,
 			c.startCoordinate,
 			c.endCoordinate,
 			c.strand
