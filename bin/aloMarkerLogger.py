@@ -652,7 +652,7 @@ class MixedSeqWriter (AloMarkerLogWriterHTML):
 			fp.write ('<A HREF="%s%s">%s</A> : chr%s : %s-%s<BR>'\
 				% (SEQUENCE_DETAIL, row['_Sequence_key'],
 				seqID(row['_Sequence_key']),
-				row['genomicChromosome'],
+				row['chromosome'],
 				row['startCoordinate'], row['endCoordinate']))
 		fp.write ('</TD></TR>\n')
 		return
