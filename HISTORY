@@ -1,3 +1,17 @@
+TAG: alomrkload-5-1-1-1
+DATE: 11/06/2012
+STAFF: dbm
+CHANGES:
+C4AM/B38 release
+
+TAG: alomrkload-tr7106-2
+TAG: alomrkload-tr7106-1
+DATE: 10/04/2012
+STAFF: sc
+CHANGES: 
+1) aloMarkerAssoc.py - update to use genomicChromosome
+2) aloMarkerLogger.py  - update to use genomicChromosome
+
 TAG: alomrkload-tr7106-BP
 DATE: 10/04/2012
 STAFF: sc
