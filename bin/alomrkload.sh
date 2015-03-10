@@ -123,7 +123,8 @@ cleanDir ${OUTPUTDIR}
 #  Run the alo marker association load
 #
 
-echo "\n`date`" >> ${LOG_PROC}
+echo "" >> ${LOG_PROC}
+echo "`date`" >> ${LOG_PROC}
 echo "Running alo marker association  load" >> ${LOG_PROC}
 ${ALOMRKLOAD}/bin/aloMarkerAssoc.py ${DBDEBUG} >> ${LOG_DIAG} 2>&1
 STAT=$?
