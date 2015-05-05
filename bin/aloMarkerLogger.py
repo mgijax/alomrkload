@@ -25,10 +25,10 @@ JNUMS = {}			# maps reference key to J: number
 # relevant URLs for linking to MGI detail pages; append a key to each to make
 # a full, valid URL
 
-ALLELE_DETAIL = 'http://www.informatics.jax.org/javawi2/servlet/WIFetch?page=alleleDetail&key='
-MARKER_DETAIL = 'http://www.informatics.jax.org/javawi2/servlet/WIFetch?page=markerDetail&key='
-REFERENCE_DETAIL = 'http://www.informatics.jax.org/searches/reference.cgi?'
-SEQUENCE_DETAIL = 'http://www.informatics.jax.org/javawi2/servlet/WIFetch?page=sequenceDetail&key='
+ALLELE_DETAIL = 'http://www.informatics.jax.org/allele/key/'
+MARKER_DETAIL = 'http://www.informatics.jax.org/marker/key/'
+REFERENCE_DETAIL = 'http://www.informatics.jax.org/reference/key/'
+SEQUENCE_DETAIL = 'http://www.informatics.jax.org/sequence/key/'
 
 ###------------------------------------------------------------------------###
 
