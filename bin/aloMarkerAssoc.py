@@ -27,7 +27,7 @@ import getopt
 import tempfile
 import traceback
 import db
-import runCommand
+from runCommand import runCommand
 import aloMarkerLogger
 
 aloMarkerLogger.DEBUG = True
@@ -463,7 +463,7 @@ def dropIndexes (table):
 	schema = os.environ['MGD_DBSCHEMADIR']
 	dropIndexCmd = '%s/index/%s_drop.object' % (schema, table)
 
-	(stdout, stderr, exitcode) = runCommand.runCommand (dropIndexCmd)
+	(stdout, stderr, exitcode) = runCommand (dropIndexCmd)
 	if (exitcode):
 		bailout (
 		'drop index on %s failed with exit code: %d -- stderr: %s' % (
@@ -483,7 +483,7 @@ def addIndexes (table):
 	schema = os.environ['MGD_DBSCHEMADIR']
 	addIndexCmd = '%s/index/%s_create.object' % (schema, table)
 
-	(stdout, stderr, exitcode) = runCommand.runCommand (addIndexCmd)
+	(stdout, stderr, exitcode) = runCommand (addIndexCmd)
 	if (exitcode):
 		bailout (
 		'add index on %s failed with exit code: %d -- stderr: %s' % (
@@ -518,7 +518,7 @@ def bcpin (table, filename, recordCount):
 	if recordCount > threshold:
 		dropIndexes(table)
 
-	(stdout, stderr, exitcode) = runCommand.runCommand (bcpCmd)
+	(stdout, stderr, exitcode) = runCommand (bcpCmd)
 	if (exitcode):
 		bailout (
 		'bcp into %s failed with exit code: %d -- stderr: %s' % (
@@ -820,7 +820,7 @@ def fjoin (
 			'-o %s%s' % (path, gnuSort)
 	debug ('Running: %s' % cmd)
 
-	(stdout, stderr, exitcode) = runCommand.runCommand (cmd)
+	(stdout, stderr, exitcode) = runCommand (cmd)
 	if (exitcode):
 		bailout ('fJoin failed with exit code: %d -- stderr: %s' % (
 			exitcode, stderr), False)
@@ -2466,8 +2466,4 @@ def main():
 ###--------------------###
 
 if __name__ == '__main__':
-	try:
-		main()
-	except:
-		writeLogs (sys.exc_info())
-		sys.exit(1)
+	main()
