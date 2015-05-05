@@ -236,10 +236,7 @@ def processCommandLine():
 
 	# extract options from command-line
 
-	try:
-		(options, args) = getopt.getopt (sys.argv[1:], 'f')
-	except getopt.GetoptError:
-		bailout ('Invalid command-line')
+	(options, args) = getopt.getopt (sys.argv[1:], 'f')
 
 	# pull out options and update global variables
 
@@ -999,7 +996,7 @@ def lookupTerm (
 		FROM VOC_Term t, VOC_Vocab v
 		WHERE t._Vocab_key = v._Vocab_key
 			AND t.term = '%s'
-			AND v.name = '%s' ''' % (term, vocab)
+			AND v.name = '%s' ''' % (term.replace("'","''"), vocab)
 	results = db.sql (cmd, 'auto')
 
 	if len(results) == 0:
