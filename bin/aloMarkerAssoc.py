@@ -297,15 +297,9 @@ def processCommandLine():
 
 	# verify database-access parameters
 
-	if (server and database and user and password):
-		db.set_sqlLogin (user, password, server, database)
-		db.useOneConnection(1)
-		try:
-			db.sql ('SELECT COUNT(1) FROM MGI_dbInfo', 'auto')
-		except:
-			bailout ('Cannot query database')
-	else:
-		bailout ('Missing database access parameter(s)')
+	db.set_sqlLogin (user, password, server, database)
+	db.useOneConnection(1)
+	db.sql ('SELECT COUNT(1) FROM MGI_dbInfo', 'auto')
 
 	# debugging output of parameters
 
@@ -362,9 +356,9 @@ def setPointCoordinates ():
 			gt._TagMethod_key,
 			gt._VectorEnd_key,
 			gt._ReverseComp_key
-		FROM SEQ_GeneTrap gt (index idx_primary),
-			SEQ_Coord_Cache cc (index idx_Sequence_key)
-		WHERE gt._Sequence_key *= cc._Sequence_key'''
+		FROM SEQ_GeneTrap gt left outer join
+		SEQ_Coord_Cache cc  on
+			gt._Sequence_key = cc._Sequence_key'''
 
 	results = db.sql (cmd, 'auto')
 	LOGGER.log ('diag', 'Retrieved %d sequence coordinates' % len(results))
@@ -582,7 +576,7 @@ def initLogger ():
 	cmd3a = '''SELECT _RefAssocType_key
 		FROM MGI_RefAssocType
 		WHERE _MGIType_key = 11		-- Allele
-			AND assocType = "Mixed" '''
+			AND assocType = 'Mixed' '''
 	results3a = db.sql (cmd3a, 'auto')
 
 	if len(results3a) > 0:
@@ -606,7 +600,7 @@ def initLogger ():
 
 	cmd4 = '''SELECT s._Sequence_key, a.accID
 		FROM SEQ_Allele_Assoc s,
-			ACC_Accession a (index idx_clustered)
+			ACC_Accession a 
 		WHERE s._Sequence_key = a._Object_key
 			AND a._MGIType_key = 19
 			AND a.private = 0
@@ -680,7 +674,7 @@ def getSequences():
 		FROM SEQ_GeneTrap gt,
 			SEQ_Coord_Cache cc
 		WHERE gt._Sequence_key = cc._Sequence_key
-			AND cc.startCoordinate != null'''
+			AND cc.startCoordinate is not null'''
 
 	results = db.sql (cmd, 'auto')
 	LOGGER.log ('diag', 'Got %d gene trap sequences with coordinates' % \
@@ -766,7 +760,7 @@ def getMarkers():
 		FROM MRK_Location_Cache c,
 			MRK_Marker m
 		WHERE c._Organism_key = 1
-			AND c.startCoordinate != null
+			AND c.startCoordinate is not null
 			AND c._Marker_key = m._Marker_Key
 			AND m._Marker_Type_key IN (1, 7)
 			AND m._Marker_Status_key IN (1,2,3)'''
@@ -1001,8 +995,8 @@ def lookupTerm (
 	cmd = '''SELECT t._Term_key
 		FROM VOC_Term t, VOC_Vocab v
 		WHERE t._Vocab_key = v._Vocab_key
-			AND t.term = "%s"
-			AND v.name = "%s"''' % (term, vocab)
+			AND t.term = '%s'
+			AND v.name = '%s' ''' % (term, vocab)
 	results = db.sql (cmd, 'auto')
 
 	if len(results) == 0:
@@ -1135,9 +1129,9 @@ def updateRepSeqs (
 			a._Sequence_key,
 			a._Qualifier_key,
 			g._TagMethod_key
-		FROM SEQ_Allele_Assoc a,
-			SEQ_GeneTrap g
-		WHERE a._Sequence_key *= g._Sequence_key'''
+		FROM SEQ_Allele_Assoc a left outer join
+		SEQ_GeneTrap g on 
+			a._Sequence_key = g._Sequence_key'''
 	results = db.sql (cmd, 'auto')
 
 	LOGGER.log ('diag', 'Retrieved %d sequence/allele associations' % \
@@ -1286,11 +1280,11 @@ def nextAssocKey():
 	# assoc key from the database and add records to the end
 
 	if MAX_ASSOC_KEY == None:
-		cmd = 'SELECT MAX(_Assoc_key) FROM ALL_Marker_Assoc'
+		cmd = 'SELECT MAX(_Assoc_key) as maxKey FROM ALL_Marker_Assoc'
 		results = db.sql (cmd, 'auto')
 
 		if results:
-			MAX_ASSOC_KEY = results[0]['']
+			MAX_ASSOC_KEY = results[0]['maxKey']
 		else:
 			MAX_ASSOC_KEY = 0
 
@@ -1585,10 +1579,10 @@ def updateSymbols (
 	cmd = '''SELECT a._Allele_key,
 			ma._Marker_key,
 			ma._Status_key
-		FROM ALL_Allele a,
-			ALL_Marker_Assoc ma
-		WHERE a._Allele_key IN (%s)
-			AND a._Allele_key *= ma._Allele_key'''
+		FROM ALL_Allele a left outer join
+		ALL_Marker_Assoc ma on
+			a._allele_key = ma._allele_key
+		WHERE a._Allele_key IN (%s) '''
 
 	# break 'alleles' into smaller lists so we don't go beyond Sybase
 	# limits; run the queries, and join the results together in 'current'
@@ -1736,7 +1730,7 @@ def flagMixedAlleles():
 			MGI_RefAssocType rat,
 			ALL_Allele a
 		WHERE rat._MGIType_key = 11
-			AND rat.assocType = "Mixed"
+			AND rat.assocType = 'Mixed'
 			AND rat._RefAssocType_key = ra._RefAssocType_key
 			AND ra._Object_key = a._Allele_key'''
 
@@ -1943,7 +1937,7 @@ def setupNoteCache ():
 		ORDER BY c._Note_key, c.sequenceNum''',
 
 		# maximum note key stored so far
-		'SELECT MAX(_Note_key) FROM MGI_Note',
+		'SELECT MAX(_Note_key) as maxKey FROM MGI_Note',
 		]
 
 	[ results1, results2, results3 ] = db.sql (cmds, 'auto')
@@ -1967,7 +1961,7 @@ def setupNoteCache ():
 
 	# remember the next note key value that we should use as we add more
 	# molecular notes
-	NEXT_NOTE_KEY = results3[0][''] + 1
+	NEXT_NOTE_KEY = results3[0]['maxKey'] + 1
 	LOGGER.log ('diag', 'Retrieved %d existing molecular notes' % \
 		(len(CURATED_NOTES) + len(LOADED_NOTES)) )
 	return
