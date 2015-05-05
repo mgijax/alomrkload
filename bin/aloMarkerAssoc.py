@@ -84,6 +84,8 @@ LOGDIR = os.getcwd()			# logging directory (start in cwd)
 OUTPUTDIR = os.getcwd()			# output dir for files (start in cwd)
 USER = 1480				# key of sybase user alomrkload
 
+BCP_COMMAND = os.environ['PG_DBUTILS'] + '/bcpin.csh'
+
 # current date and time, formatted for sybase
 NOW = time.strftime ('%m-%d-%Y %H:%M', time.localtime(time.time()))
 
@@ -140,9 +142,9 @@ def optimizeTables ():
 	# Throws: propagates any exceptions from db.sql()
 
 	debug ('in optimizeTables()')
-	for table in UPDATED_TABLES:
-		update ('UPDATE STATISTICS %s' % table)
-		LOGGER.log ('diag', 'Updated table statistics on %s' % table)
+	#for table in UPDATED_TABLES:
+	#	update ('UPDATE STATISTICS %s' % table)
+	#	LOGGER.log ('diag', 'Updated table statistics on %s' % table)
 	return
 
 ###------------------------------------------------------------------------###
@@ -216,6 +218,7 @@ def update (
 	if SQL_FILE:
 		SQL_FILE.write ('%s\n' % cmd)
 	results = db.sql (cmd, 'auto')
+	db.commit()
 	return results
 
 ###------------------------------------------------------------------------###
@@ -410,9 +413,9 @@ def setPointCoordinates ():
 
 	LOGGER.log ('diag', 'Identified new point coords')
 
-	cmd1 = '''UPDATE SEQ_GeneTrap
+	cmd1 = '''UPDATE SEQ_GeneTrap g
 		SET pointCoordinate = cc.%s
-		FROM SEQ_GeneTrap g, SEQ_Coord_Cache cc
+		FROM SEQ_Coord_Cache cc
 		WHERE g._Sequence_key = cc._Sequence_key
 			AND g._Sequence_key IN (%s)'''
 	for sublist in splitList (setToStart, 225):
@@ -506,8 +509,8 @@ def bcpin (table, filename, recordCount):
 	server = os.environ['MGD_DBSERVER']
 	database = os.environ['MGD_DBNAME']
 
-	bcpCmd = '%s/bin/bcpin.csh %s %s %s %s %s "\\t" "\\n"' % (mgiDbUtils,
-		server, database, table, OUTPUTDIR, filename)
+	bcpCmd = '%s %s %s %s "/" %s "\\t" "\\n" mgd' % \
+	    (BCP_COMMAND, server, database,table, filename)
 
 	if recordCount > threshold:
 		dropIndexes(table)
@@ -1549,7 +1552,7 @@ def updateMarkerAssoc (
 	if toAdd or toDelete:
 		# Would dropping and recreating indexes help performance here?
 		# dropIndexes('ALL_Allele')
-		update ('EXEC ALL_cacheMarker')
+		update ('select * from ALL_cacheMarker()')
 		# addIndexes('ALL_Allele')
 		LOGGER.log ('diag', 'Ran ALL_cacheMarker stored procedure')
 		flagTable ('ALL_Marker_Assoc')
@@ -1605,9 +1608,9 @@ def updateSymbols (
 	# to apply the changes to ALL_Allele
 
 #	cmd = 'UPDATE ALL_Allele SET symbol = "%s" WHERE _Allele_key = %d'
-	cmd = 'INSERT #tmp_allSym (symbol, _Allele_key) VALUES ("%s", %d)'
+	cmd = 'INSERT tmp_allSym (symbol, _Allele_key) VALUES (\'%s\', %d)'
 
-	update ('''CREATE TABLE #tmp_allSym (
+	update ('''CREATE temp TABLE tmp_allSym (
 		_Allele_key int not null,
 		symbol varchar(60) not null)''')
 
@@ -1646,16 +1649,16 @@ def updateSymbols (
 			asIs = asIs + 1
 
 	if updated:
-		update ('''create unique index #index1
-			on #tmp_allSym (_Allele_key, symbol)''')
-		update ('''UPDATE ALL_Allele
+		update ('''create unique index tmp_allSym_index1
+			on tmp_allSym (_Allele_key, symbol)''')
+		update ('''UPDATE ALL_Allele a
 			SET symbol = t.symbol
-			FROM ALL_Allele a, #tmp_allSym t
+			FROM tmp_allSym t
 			WHERE a._Allele_key = t._Allele_key''')
 		flagTable ('ALL_Allele')
 	LOGGER.log ('diag', 'Updated %d allele symbols' % updated)
 	LOGGER.log ('diag', 'Left %d allele symbols as-is (for alleles with altered marker associations)' % asIs)
-	update ('DROP TABLE #tmp_allSym')
+	update ('DROP TABLE tmp_allSym')
 	return
 
 ###------------------------------------------------------------------------###
