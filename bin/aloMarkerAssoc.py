@@ -84,7 +84,7 @@ LOGDIR = os.getcwd()			# logging directory (start in cwd)
 OUTPUTDIR = os.getcwd()			# output dir for files (start in cwd)
 USER = 1480				# key of sybase user alomrkload
 
-BCP_COMMAND = os.environ['PG_DBUTILS'] + '/bcpin.csh'
+BCP_COMMAND = os.environ['PG_DBUTILS'] + '/bin/bcpin.csh'
 
 # current date and time, formatted for sybase
 NOW = time.strftime ('%m-%d-%Y %H:%M', time.localtime(time.time()))
@@ -506,19 +506,21 @@ def bcpin (table, filename, recordCount):
 	server = os.environ['MGD_DBSERVER']
 	database = os.environ['MGD_DBNAME']
 
-	bcpCmd = '%s %s %s %s "/" %s "\\t" "\\n" mgd' % \
-	    (BCP_COMMAND, server, database,table, filename)
+	bcpCmd = '%s %s %s %s %s %s "\\t" "\\n" mgd' % \
+	    (BCP_COMMAND, server, database,table, OUTPUTDIR, filename)
 
 	if recordCount > threshold:
 		dropIndexes(table)
 
-	(stdout, stderr, exitcode) = runCommand (bcpCmd)
-	if (exitcode):
-		bailout (
+	#(stdout, stderr, exitcode) = runCommand (bcpCmd)
+	exitcode = os.system( bcpCmd )
+	if exitcode:
+	    bailout (
 		'bcp into %s failed with exit code: %d -- stderr: %s' % (
 			table, exitcode, stderr), False)
 
 	if recordCount > threshold:
+		debug ('adding indices')
 		addIndexes(table)
 	return
 
@@ -995,8 +997,8 @@ def lookupTerm (
 	cmd = '''SELECT t._Term_key
 		FROM VOC_Term t, VOC_Vocab v
 		WHERE t._Vocab_key = v._Vocab_key
-			AND t.term = '%s'
-			AND v.name = '%s' ''' % (term.replace("'","''"), vocab)
+			AND lower(t.term) = lower('%s')
+			AND lower(v.name) = lower('%s') ''' % (term.replace("'","''"), vocab)
 	results = db.sql (cmd, 'auto')
 
 	if len(results) == 0:
@@ -1530,6 +1532,7 @@ def updateMarkerAssoc (
 	LOGGER.log ('diag', 'Wrote %d allele/marker associations to bcp file'\
 		% len(toAdd))
 
+	db.commit()
 	bcpin ('ALL_Marker_Assoc', filename, len(toAdd))
 	LOGGER.log ('diag', 'Added %d new allele/marker associations by bcp'\
 		% len(toAdd))
@@ -2107,6 +2110,7 @@ def updateMolecularNotes():
 			len(NOTES_TO_DELETE))
 		flagTable ('MGI_Note')
 
+	db.commit()
 	if hasNotes:
 		bcpin ('MGI_Note', noteFile, len(NOTES_TO_ADD))
 		LOGGER.log ('diag', 'Loaded molecular notes by bcp')
