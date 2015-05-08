@@ -1608,7 +1608,7 @@ def updateSymbols (
 	# to apply the changes to ALL_Allele
 
 #	cmd = 'UPDATE ALL_Allele SET symbol = "%s" WHERE _Allele_key = %d'
-	cmd = "INSERT tmp_allSym (symbol, _Allele_key) VALUES ('%s', %d)"
+	cmd = "INSERT into tmp_allSym (symbol, _Allele_key) VALUES ('%s', %d)"
 
 	update ('''CREATE temp TABLE tmp_allSym (
 		_Allele_key int not null,
