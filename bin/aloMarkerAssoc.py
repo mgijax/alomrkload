@@ -454,7 +454,7 @@ def dropIndexes (table):
 	# Throws: propagates exception from bailout() if any part fails
 	#	(index removal, bcp in, index generation)
 
-	schema = os.environ['PG_MGD_DBSCHEMADIR']
+	schema = os.environ['MGD_DBSCHEMADIR']
 	dropIndexCmd = '%s/index/%s_drop.object' % (schema, table)
 
 	(stdout, stderr, exitcode) = runCommand (dropIndexCmd)
@@ -474,7 +474,7 @@ def addIndexes (table):
 	# Throws: propagates exception from bailout() if any part fails
 	#	(index removal, bcp in, index generation)
 
-	schema = os.environ['PG_MGD_DBSCHEMADIR']
+	schema = os.environ['MGD_DBSCHEMADIR']
 	addIndexCmd = '%s/index/%s_create.object' % (schema, table)
 
 	(stdout, stderr, exitcode) = runCommand (addIndexCmd)
@@ -500,7 +500,7 @@ def bcpin (table, filename, recordCount):
 	# of records.
 	threshold = 5000
 
-	schema = os.environ['PG_MGD_DBSCHEMADIR']
+	schema = os.environ['MGD_DBSCHEMADIR']
 
 	mgiDbUtils = os.environ['MGI_DBUTILS']
 	server = os.environ['MGD_DBSERVER']
