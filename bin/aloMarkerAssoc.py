@@ -27,7 +27,7 @@ import getopt
 import tempfile
 import traceback
 import db
-import runCommand
+from runCommand import runCommand
 import aloMarkerLogger
 
 aloMarkerLogger.DEBUG = True
@@ -83,6 +83,8 @@ UPDATED_TABLES = []			# list of tables with updated records
 LOGDIR = os.getcwd()			# logging directory (start in cwd)
 OUTPUTDIR = os.getcwd()			# output dir for files (start in cwd)
 USER = 1480				# key of sybase user alomrkload
+
+BCP_COMMAND = os.environ['PG_DBUTILS'] + '/bin/bcpin.csh'
 
 # current date and time, formatted for sybase
 NOW = time.strftime ('%m-%d-%Y %H:%M', time.localtime(time.time()))
@@ -140,9 +142,9 @@ def optimizeTables ():
 	# Throws: propagates any exceptions from db.sql()
 
 	debug ('in optimizeTables()')
-	for table in UPDATED_TABLES:
-		update ('UPDATE STATISTICS %s' % table)
-		LOGGER.log ('diag', 'Updated table statistics on %s' % table)
+	#for table in UPDATED_TABLES:
+	#	update ('UPDATE STATISTICS %s' % table)
+	#	LOGGER.log ('diag', 'Updated table statistics on %s' % table)
 	return
 
 ###------------------------------------------------------------------------###
@@ -216,6 +218,7 @@ def update (
 	if SQL_FILE:
 		SQL_FILE.write ('%s\n' % cmd)
 	results = db.sql (cmd, 'auto')
+	db.commit()
 	return results
 
 ###------------------------------------------------------------------------###
@@ -233,10 +236,7 @@ def processCommandLine():
 
 	# extract options from command-line
 
-	try:
-		(options, args) = getopt.getopt (sys.argv[1:], 'f')
-	except getopt.GetoptError:
-		bailout ('Invalid command-line')
+	(options, args) = getopt.getopt (sys.argv[1:], 'f')
 
 	# pull out options and update global variables
 
@@ -297,15 +297,9 @@ def processCommandLine():
 
 	# verify database-access parameters
 
-	if (server and database and user and password):
-		db.set_sqlLogin (user, password, server, database)
-		db.useOneConnection(1)
-		try:
-			db.sql ('SELECT COUNT(1) FROM MGI_dbInfo', 'auto')
-		except:
-			bailout ('Cannot query database')
-	else:
-		bailout ('Missing database access parameter(s)')
+	db.set_sqlLogin (user, password, server, database)
+	db.useOneConnection(1)
+	db.sql ('SELECT COUNT(1) FROM MGI_dbInfo', 'auto')
 
 	# debugging output of parameters
 
@@ -362,9 +356,9 @@ def setPointCoordinates ():
 			gt._TagMethod_key,
 			gt._VectorEnd_key,
 			gt._ReverseComp_key
-		FROM SEQ_GeneTrap gt (index idx_primary),
-			SEQ_Coord_Cache cc (index idx_Sequence_key)
-		WHERE gt._Sequence_key *= cc._Sequence_key'''
+		FROM SEQ_GeneTrap gt left outer join
+		SEQ_Coord_Cache cc  on
+			gt._Sequence_key = cc._Sequence_key'''
 
 	results = db.sql (cmd, 'auto')
 	LOGGER.log ('diag', 'Retrieved %d sequence coordinates' % len(results))
@@ -416,9 +410,9 @@ def setPointCoordinates ():
 
 	LOGGER.log ('diag', 'Identified new point coords')
 
-	cmd1 = '''UPDATE SEQ_GeneTrap
+	cmd1 = '''UPDATE SEQ_GeneTrap g
 		SET pointCoordinate = cc.%s
-		FROM SEQ_GeneTrap g, SEQ_Coord_Cache cc
+		FROM SEQ_Coord_Cache cc
 		WHERE g._Sequence_key = cc._Sequence_key
 			AND g._Sequence_key IN (%s)'''
 	for sublist in splitList (setToStart, 225):
@@ -463,7 +457,7 @@ def dropIndexes (table):
 	schema = os.environ['MGD_DBSCHEMADIR']
 	dropIndexCmd = '%s/index/%s_drop.object' % (schema, table)
 
-	(stdout, stderr, exitcode) = runCommand.runCommand (dropIndexCmd)
+	(stdout, stderr, exitcode) = runCommand (dropIndexCmd)
 	if (exitcode):
 		bailout (
 		'drop index on %s failed with exit code: %d -- stderr: %s' % (
@@ -483,7 +477,7 @@ def addIndexes (table):
 	schema = os.environ['MGD_DBSCHEMADIR']
 	addIndexCmd = '%s/index/%s_create.object' % (schema, table)
 
-	(stdout, stderr, exitcode) = runCommand.runCommand (addIndexCmd)
+	(stdout, stderr, exitcode) = runCommand (addIndexCmd)
 	if (exitcode):
 		bailout (
 		'add index on %s failed with exit code: %d -- stderr: %s' % (
@@ -512,19 +506,21 @@ def bcpin (table, filename, recordCount):
 	server = os.environ['MGD_DBSERVER']
 	database = os.environ['MGD_DBNAME']
 
-	bcpCmd = '%s/bin/bcpin.csh %s %s %s %s %s "\\t" "\\n"' % (mgiDbUtils,
-		server, database, table, OUTPUTDIR, filename)
+	bcpCmd = '%s %s %s %s %s %s "\\t" "\\n" mgd' % \
+	    (BCP_COMMAND, server, database,table, OUTPUTDIR, filename)
 
 	if recordCount > threshold:
 		dropIndexes(table)
 
-	(stdout, stderr, exitcode) = runCommand.runCommand (bcpCmd)
-	if (exitcode):
-		bailout (
+	#(stdout, stderr, exitcode) = runCommand (bcpCmd)
+	exitcode = os.system( bcpCmd )
+	if exitcode:
+	    bailout (
 		'bcp into %s failed with exit code: %d -- stderr: %s' % (
 			table, exitcode, stderr), False)
 
 	if recordCount > threshold:
+		debug ('adding indices')
 		addIndexes(table)
 	return
 
@@ -582,7 +578,7 @@ def initLogger ():
 	cmd3a = '''SELECT _RefAssocType_key
 		FROM MGI_RefAssocType
 		WHERE _MGIType_key = 11		-- Allele
-			AND assocType = "Mixed" '''
+			AND assocType = 'Mixed' '''
 	results3a = db.sql (cmd3a, 'auto')
 
 	if len(results3a) > 0:
@@ -606,7 +602,7 @@ def initLogger ():
 
 	cmd4 = '''SELECT s._Sequence_key, a.accID
 		FROM SEQ_Allele_Assoc s,
-			ACC_Accession a (index idx_clustered)
+			ACC_Accession a 
 		WHERE s._Sequence_key = a._Object_key
 			AND a._MGIType_key = 19
 			AND a.private = 0
@@ -680,7 +676,7 @@ def getSequences():
 		FROM SEQ_GeneTrap gt,
 			SEQ_Coord_Cache cc
 		WHERE gt._Sequence_key = cc._Sequence_key
-			AND cc.startCoordinate != null'''
+			AND cc.startCoordinate is not null'''
 
 	results = db.sql (cmd, 'auto')
 	LOGGER.log ('diag', 'Got %d gene trap sequences with coordinates' % \
@@ -766,7 +762,7 @@ def getMarkers():
 		FROM MRK_Location_Cache c,
 			MRK_Marker m
 		WHERE c._Organism_key = 1
-			AND c.startCoordinate != null
+			AND c.startCoordinate is not null
 			AND c._Marker_key = m._Marker_Key
 			AND m._Marker_Type_key IN (1, 7)
 			AND m._Marker_Status_key IN (1,2,3)'''
@@ -820,7 +816,7 @@ def fjoin (
 			'-o %s%s' % (path, gnuSort)
 	debug ('Running: %s' % cmd)
 
-	(stdout, stderr, exitcode) = runCommand.runCommand (cmd)
+	(stdout, stderr, exitcode) = runCommand (cmd)
 	if (exitcode):
 		bailout ('fJoin failed with exit code: %d -- stderr: %s' % (
 			exitcode, stderr), False)
@@ -1001,8 +997,8 @@ def lookupTerm (
 	cmd = '''SELECT t._Term_key
 		FROM VOC_Term t, VOC_Vocab v
 		WHERE t._Vocab_key = v._Vocab_key
-			AND t.term = "%s"
-			AND v.name = "%s"''' % (term, vocab)
+			AND lower(t.term) = lower('%s')
+			AND lower(v.name) = lower('%s') ''' % (term.replace("'","''"), vocab)
 	results = db.sql (cmd, 'auto')
 
 	if len(results) == 0:
@@ -1135,9 +1131,9 @@ def updateRepSeqs (
 			a._Sequence_key,
 			a._Qualifier_key,
 			g._TagMethod_key
-		FROM SEQ_Allele_Assoc a,
-			SEQ_GeneTrap g
-		WHERE a._Sequence_key *= g._Sequence_key'''
+		FROM SEQ_Allele_Assoc a left outer join
+		SEQ_GeneTrap g on 
+			a._Sequence_key = g._Sequence_key'''
 	results = db.sql (cmd, 'auto')
 
 	LOGGER.log ('diag', 'Retrieved %d sequence/allele associations' % \
@@ -1286,11 +1282,11 @@ def nextAssocKey():
 	# assoc key from the database and add records to the end
 
 	if MAX_ASSOC_KEY == None:
-		cmd = 'SELECT MAX(_Assoc_key) FROM ALL_Marker_Assoc'
+		cmd = 'SELECT MAX(_Assoc_key) as maxKey FROM ALL_Marker_Assoc'
 		results = db.sql (cmd, 'auto')
 
 		if results:
-			MAX_ASSOC_KEY = results[0]['']
+			MAX_ASSOC_KEY = results[0]['maxKey']
 		else:
 			MAX_ASSOC_KEY = 0
 
@@ -1536,6 +1532,7 @@ def updateMarkerAssoc (
 	LOGGER.log ('diag', 'Wrote %d allele/marker associations to bcp file'\
 		% len(toAdd))
 
+	db.commit()
 	bcpin ('ALL_Marker_Assoc', filename, len(toAdd))
 	LOGGER.log ('diag', 'Added %d new allele/marker associations by bcp'\
 		% len(toAdd))
@@ -1555,7 +1552,7 @@ def updateMarkerAssoc (
 	if toAdd or toDelete:
 		# Would dropping and recreating indexes help performance here?
 		# dropIndexes('ALL_Allele')
-		update ('EXEC ALL_cacheMarker')
+		update ('select * from ALL_cacheMarker()')
 		# addIndexes('ALL_Allele')
 		LOGGER.log ('diag', 'Ran ALL_cacheMarker stored procedure')
 		flagTable ('ALL_Marker_Assoc')
@@ -1585,10 +1582,10 @@ def updateSymbols (
 	cmd = '''SELECT a._Allele_key,
 			ma._Marker_key,
 			ma._Status_key
-		FROM ALL_Allele a,
-			ALL_Marker_Assoc ma
-		WHERE a._Allele_key IN (%s)
-			AND a._Allele_key *= ma._Allele_key'''
+		FROM ALL_Allele a left outer join
+		ALL_Marker_Assoc ma on
+			a._allele_key = ma._allele_key
+		WHERE a._Allele_key IN (%s) '''
 
 	# break 'alleles' into smaller lists so we don't go beyond Sybase
 	# limits; run the queries, and join the results together in 'current'
@@ -1611,9 +1608,9 @@ def updateSymbols (
 	# to apply the changes to ALL_Allele
 
 #	cmd = 'UPDATE ALL_Allele SET symbol = "%s" WHERE _Allele_key = %d'
-	cmd = 'INSERT #tmp_allSym (symbol, _Allele_key) VALUES ("%s", %d)'
+	cmd = "INSERT into tmp_allSym (symbol, _Allele_key) VALUES ('%s', %d)"
 
-	update ('''CREATE TABLE #tmp_allSym (
+	update ('''CREATE temp TABLE tmp_allSym (
 		_Allele_key int not null,
 		symbol varchar(60) not null)''')
 
@@ -1652,16 +1649,16 @@ def updateSymbols (
 			asIs = asIs + 1
 
 	if updated:
-		update ('''create unique index #index1
-			on #tmp_allSym (_Allele_key, symbol)''')
-		update ('''UPDATE ALL_Allele
+		update ('''create unique index tmp_allSym_index1
+			on tmp_allSym (_Allele_key, symbol)''')
+		update ('''UPDATE ALL_Allele a
 			SET symbol = t.symbol
-			FROM ALL_Allele a, #tmp_allSym t
+			FROM tmp_allSym t
 			WHERE a._Allele_key = t._Allele_key''')
 		flagTable ('ALL_Allele')
 	LOGGER.log ('diag', 'Updated %d allele symbols' % updated)
 	LOGGER.log ('diag', 'Left %d allele symbols as-is (for alleles with altered marker associations)' % asIs)
-	update ('DROP TABLE #tmp_allSym')
+	update ('DROP TABLE tmp_allSym')
 	return
 
 ###------------------------------------------------------------------------###
@@ -1736,7 +1733,7 @@ def flagMixedAlleles():
 			MGI_RefAssocType rat,
 			ALL_Allele a
 		WHERE rat._MGIType_key = 11
-			AND rat.assocType = "Mixed"
+			AND rat.assocType = 'Mixed'
 			AND rat._RefAssocType_key = ra._RefAssocType_key
 			AND ra._Object_key = a._Allele_key'''
 
@@ -1943,7 +1940,7 @@ def setupNoteCache ():
 		ORDER BY c._Note_key, c.sequenceNum''',
 
 		# maximum note key stored so far
-		'SELECT MAX(_Note_key) FROM MGI_Note',
+		'SELECT MAX(_Note_key) as maxKey FROM MGI_Note',
 		]
 
 	[ results1, results2, results3 ] = db.sql (cmds, 'auto')
@@ -1967,7 +1964,7 @@ def setupNoteCache ():
 
 	# remember the next note key value that we should use as we add more
 	# molecular notes
-	NEXT_NOTE_KEY = results3[0][''] + 1
+	NEXT_NOTE_KEY = results3[0]['maxKey'] + 1
 	LOGGER.log ('diag', 'Retrieved %d existing molecular notes' % \
 		(len(CURATED_NOTES) + len(LOADED_NOTES)) )
 	return
@@ -2113,6 +2110,7 @@ def updateMolecularNotes():
 			len(NOTES_TO_DELETE))
 		flagTable ('MGI_Note')
 
+	db.commit()
 	if hasNotes:
 		bcpin ('MGI_Note', noteFile, len(NOTES_TO_ADD))
 		LOGGER.log ('diag', 'Loaded molecular notes by bcp')
@@ -2466,8 +2464,4 @@ def main():
 ###--------------------###
 
 if __name__ == '__main__':
-	try:
-		main()
-	except:
-		writeLogs (sys.exc_info())
-		sys.exit(1)
+	main()
