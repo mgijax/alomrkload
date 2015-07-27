@@ -501,8 +501,6 @@ def bcpin (table, filename, recordCount):
 	threshold = 5000
 
 	schema = os.environ['MGD_DBSCHEMADIR']
-
-	mgiDbUtils = os.environ['MGI_DBUTILS']
 	server = os.environ['MGD_DBSERVER']
 	database = os.environ['MGD_DBNAME']
 
