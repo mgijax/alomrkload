@@ -1316,9 +1316,11 @@ def updateMarkerAssoc (
 	sublists = batchList (toDelete, 100)
 	cmd = """
 		UPDATE ALL_Allele 
-		set _Marker_key = null 
-		WHERE _Allele_key IN (%s)
-	"""
+		set _Marker_key = null,
+			 _modifiedby_key = %d,
+			modification_date = now()
+		WHERE _Allele_key IN (%%s)
+	""" % USER
 	for sublist in sublists:
 		update (cmd % ','.join (map (str, sublist)) )
 		for alleleKey in sublist:
@@ -1336,9 +1338,11 @@ def updateMarkerAssoc (
 	for (alleleKey, markerKey) in toAdd:
 		update ("""
 			UPDATE ALL_Allele
-			set _Marker_key = %d
+			set _Marker_key = %d,
+				_modifiedby_key = %d,
+				modification_date = now()
 			WHERE _Allele_key = %d
-			""" % (markerKey, alleleKey))
+			""" % (markerKey, USER, alleleKey))
 
 	LOGGER.log ('diag', 'Added %d new allele/marker associations to ALL_Allele._marker_key'\
 		% len(toAdd))
@@ -1399,7 +1403,6 @@ def updateSymbols (
 	# temp table with no indexes, then just do a single update statement
 	# to apply the changes to ALL_Allele
 
-#	cmd = 'UPDATE ALL_Allele SET symbol = "%s" WHERE _Allele_key = %d'
 	cmd = "INSERT into tmp_allSym (symbol, _Allele_key) VALUES ('%s', %d)"
 
 	update ('''CREATE temp TABLE tmp_allSym (
@@ -1628,7 +1631,13 @@ def flagMixedAlleles():
 				LOGGER.log ("Mixed",
 					(allele, seqs) )
 
-	cmd = 'UPDATE ALL_Allele SET isMixed = %d WHERE _Allele_key IN (%s)'
+	cmd = """ 
+	    UPDATE ALL_Allele 
+	    SET isMixed = %%d,
+		_modifiedby_key = %d,
+		modification_date = now()
+	     WHERE _Allele_key IN (%%s)
+	""" % USER
 
 	# update alleles which now need to be flagged as mixed
 
@@ -1679,7 +1688,7 @@ def setupNoteCache ():
 	    # Allele type
 	    'mgitype': 11,
 	    # 'alomrkload' user
-	    'user': 1480
+	    'user': USER
 	}
 	
 
