@@ -1,3 +1,9 @@
+TAG: alomrkload-6-0-0-3
+DATE: 8/21/15
+STAFF: kstone
+1) removed all_marker_assoc table
+2) added _modifiedby_key & modification date when allele/marker assoc change
+
 TAG: alomrkload-6-0-0-2
 TAG: alomrkload-6-0-0-1
 DATE: 7/23/15
