@@ -1,3 +1,12 @@
+TAG: alomrkload-6-0-0-?
+DATE: 11/20/2015
+STAFF: lec
+1) TR12190/only select alleles that have sequence associations
+2) alomrkload.config.default:
+	. FJOIN_SCRIPT/fjoin was hard-coded; using MGICONFIG
+	. aloMarkerAssoc/batchList : increased to 500
+	. writeCuratorLogs : archived/no longer needed
+
 TAG: alomrkload-6-0-0-3
 DATE: 8/21/15
 STAFF: kstone

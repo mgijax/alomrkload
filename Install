@@ -57,3 +57,12 @@ fi
 # run DLAInstall
 #
 ${DLAINSTALL} ${DEV}
+
+#
+# Create the input directory if it doesn't exist.
+#
+if [ ! -d ${INPUTDIR} ]
+then
+    mkdir -p ${INPUTDIR}
+fi
+

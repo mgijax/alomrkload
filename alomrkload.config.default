@@ -34,7 +34,7 @@ export CONFIG_MASTER
 #############################################################################
 
 #
-#  Output File Settings
+#  Input/Output File Settings
 #
 
 #  full path the the logs, reports, and archive directories
@@ -42,14 +42,11 @@ FILEDIR=${DATALOADSOUTPUT}/mgi/alomrkload
 
 LOGDIR=${FILEDIR}/logs
 RPTDIR=${FILEDIR}/reports
+INPUTDIR=${FILEDIR}/input
 OUTPUTDIR=${FILEDIR}/output
 ARCHIVEDIR=${FILEDIR}/archive
 
-export FILEDIR LOGDIR RPTDIR OUTPUTDIR ARCHIVEDIR
-
-#
-#  Input File Settings
-#
+export FILEDIR LOGDIR RPTDIR INPUTDIR OUTPUTDIR ARCHIVEDIR
 
 #  this load's MGI_User login. For DB tables CreatedBy and ModifiedBy column
 #  and for logging in radar jobstream table and files processed table
@@ -68,10 +65,11 @@ export LOG_PROC LOG_DIAG LOG_CUR LOG_VAL
 # when true logs debug info to the diagnostic log
 LOG_DEBUG=true
 
-# set to '-f' to log insert and update sql (done inline) set
-DBDEBUG='-f'
+export LOG_DEBUG
 
-export LOG_DEBUG DBDEBUG
+# fjoin
+FJOIN_SCRIPT=${LIBDIRS}/fjoin.py
+export FJOIN_SCRIPT
 
 #############################################################################
 #

@@ -16,6 +16,9 @@
 #
 # History
 #
+# 11/20/2015	lec
+#	- TR12190/only select alleles that have sequence associations
+#
 # 08/10/2015 kstone
 #	- TR 12020 Removed ALL_Marker_Assoc table
 #
@@ -25,11 +28,9 @@
 
 import os
 import sys
-import time
-import getopt
-import tempfile
 import traceback
 import db
+import mgi_utils
 from runCommand import runCommand
 import aloMarkerLogger
 
@@ -42,7 +43,7 @@ aloMarkerLogger.DEBUG = True
 ###--- usage statement ---###
 ###-----------------------###
 
-USAGE='''Usage: %s [-f]
+USAGE='''Usage: %s
     Purpose:
     	To update associations between ALOs (Allele-Like Objects) and markers,
 	and related data.  This process includes:
@@ -53,26 +54,21 @@ USAGE='''Usage: %s [-f]
 	    	marker associations
 	    5. update ALO symbols to reflect marker nomenclature
 	    6. create/update molecular notes for ALOs
-    Flags:
-	-f : write a log file of SQL commands which were used to update the db
+
     Notes:
 	1. Requires several environment variables to be set.  See header
 	   comments at the top of the script if you need the list.
-	3. Using -f will write to the 'sql.log' file the statements that were
-	   executed to make the changes to the database.  (Any read-only
-	   statements are not written.)  This is just an extra logging
-	   mechanism; the script still executes the commands inline.
-	4. Does not do a drop-and-reload of any data; uses inline SQL to
+	2. Does not do a drop-and-reload of any data; uses inline SQL to
 	   apply changes to the database after computing a diff with the
 	   current data state.
-	5. Given #4, all changes are computed using other data in the
+	3. All changes are computed using other data in the
 	   database.  So, if a failure occurs, the script can be re-run as
 	   needed once any source data problems have been resolved.
-	6. Assumes exclusive write-access to the database.
-	7. Writes logs to the directory given in the LOGDIR environment
+	4. Assumes exclusive write-access to the database.
+	5. Writes logs to the directory given in the LOGDIR environment
 	   variable.  If that is not defined, then the current working
 	   directory is used instead.
-	8. If we cannot write curator and diagnostic logs to the log dir (see
+	6. If we cannot write curator and diagnostic logs to the log dir (see
 	   item #7), we will instead write them to /tmp with an error message
 	   to stdout and to stderr.
 ''' % sys.argv[0]
@@ -81,16 +77,15 @@ USAGE='''Usage: %s [-f]
 ###--- CONSTANTS ---###
 ###------------------------###
 
-START_TIME = time.time()		# time (in seconds) at start of run
 VERBOSE = False				# run in verbose mode?
 SQL_FILE = None				# file pointer to output SQL cmds
-TEMP_FILES = []				# temporary files to delete when done
 LOGDIR = os.getcwd()			# logging directory (start in cwd)
+INPUTDIR = os.getcwd()			# output dir for files (start in cwd)
 OUTPUTDIR = os.getcwd()			# output dir for files (start in cwd)
-USER = 1480				# key of sybase user alomrkload
+USER = 1480				# key of MGI_User._User_key/login = 'alomrkload'
 
-# current date and time, formatted for sybase
-NOW = time.strftime ('%m-%d-%Y %H:%M', time.localtime(time.time()))
+# current date and time
+NOW = mgi_utils.date("%m/%d/%Y %H:%M")
 
 # for collecting log items
 LOGGER = aloMarkerLogger.AloMarkerLogManager()
@@ -120,15 +115,6 @@ NOTE_C = '''Sequence tags for this gene trap insertion either do not align with 
 # NOTE_D is set whenever an allele has been flagged as a mixed line,
 # and where there is not already a curated molecular note
 NOTE_D = '''Mixed cell lines contain multiple mutant cell line clones mixed together in a single culture well. Mixed lines are characterized by multiple sequence tags for the same cell line that align to different locations in the genome.'''
-
-
-
-###-----------------###
-###--- Globals ---###
-###-----------------###
-
-ALLELE_SYMBOLS = {}	# cache of allele key -> allele symbol
-MARKER_SYMBOLS = {}	# cache of marker key -> marker symbol
 
 # Note caches
 CURATED_NOTES = {}	# has allele key for each allele with curated mol.note
@@ -164,8 +150,7 @@ def bailout (
 def debug (
 	s			# string; message to be given to user
 	):
-	# Purpose: if running in verbose mode, writes the given message
-	#	to stdout with a timestamp
+	# Purpose: if running in verbose mode, writes the given message to stdout
 	# Returns: nothing
 	# Assumes: nothing
 	# Effects: writes to stdout
@@ -175,26 +160,6 @@ def debug (
 		LOGGER.log ('debug', s)
 		print 'debug: ' + s
 	return
-
-###------------------------------------------------------------------------###
-
-def getTempFile (
-	prefix, 		# string; prefix for desired filename
-	suffix			# string; suffix for desired filename
-	):
-	# Purpose: generate a new temp file named according to the given
-	#	'prefix' and 'suffix'
-	# Returns: string -- path to uniquely-named temporary file
-	# Assumes: nothing
-	# Effects: creates and closes file in file system, so its name will
-	#	be reserved and not scooped up by another process
-	# Throws: propagates any exceptions from tempfile.mkstemp()
-
-	global TEMP_FILES
-
-	(fp, path) = tempfile.mkstemp (suffix, prefix, text = True)
-	TEMP_FILES.append (path)
-	return path
 
 ###------------------------------------------------------------------------###
 
@@ -208,13 +173,10 @@ def update (
 	# Assumes: db module has been properly initialized
 	# Effects: executes 'cmd' as a SQL command against the database
 	# Throws: propagates any exceptions from db.sql()
-	# Notes: If excecuting in SQL-file mode (-f), will print 'cmd' to
-	#	SQL_FILE, in addition to executing it against the database.
+	# Notes: print/execute 'cmd' to SQL_FILE/database.
 	#	This provides us a record of changes made by the load.
 
-	# if we need to log the update commands, do so before executing it
-	if SQL_FILE:
-		SQL_FILE.write ('%s\n' % cmd)
+	SQL_FILE.write ('%s\n' % cmd)
 	results = db.sql (cmd, 'auto')
 	return results
 
@@ -229,20 +191,7 @@ def processCommandLine():
 	#	test query against the database
 	# Throws: propagates SystemExit from bailout() in case of errors
 
-	global VERBOSE, SQL_FILE, LOGDIR, OUTPUTDIR
-
-	# extract options from command-line
-
-	(options, args) = getopt.getopt (sys.argv[1:], 'f')
-
-	# pull out options and update global variables
-
-	sql_filename = None
-	for (option, value) in options:
-		if option == '-f':
-			sql_filename = 'sql.log'
-		else:
-			bailout ('Unsupported option: %s' % option)
+	global VERBOSE, SQL_FILE, LOGDIR, INPUTDIR, OUTPUTDIR, FJOIN_SCRIPT
 
 	# pull necessary values out of environment variables
 
@@ -258,8 +207,14 @@ def processCommandLine():
 	if environ.has_key('LOGDIR'):
 		LOGDIR = environ['LOGDIR']
 
+	if environ.has_key('INPUTDIR'):
+		INPUTDIR = environ['INPUTDIR']
+
 	if environ.has_key('OUTPUTDIR'):
 		OUTPUTDIR = environ['OUTPUTDIR']
+
+	if environ.has_key('FJOIN_SCRIPT'):
+		FJOIN_SCRIPT = environ['FJOIN_SCRIPT']
 
 	if environ.has_key('LOG_DEBUG'):
 		if environ['LOG_DEBUG'].lower() != 'false':
@@ -284,9 +239,9 @@ def processCommandLine():
 	if not os.path.isdir (LOGDIR):
 		bailout ('Log directory is not a directory: %s' % LOGDIR)
 
-	if sql_filename:
-		sql_filename = os.path.join (LOGDIR, sql_filename)
-		SQL_FILE = open (sql_filename, 'w')
+	# SQL log
+	sql_filename = os.path.join (LOGDIR, 'sql.log')
+	SQL_FILE = open (sql_filename, 'w')
 
 	# verify database-access parameters
 
@@ -297,8 +252,7 @@ def processCommandLine():
 
 	debug ('Log directory: %s' % LOGDIR)
 	debug ('Database: %s..%s  User: %s' % (server, database, user))
-	if sql_filename:
-		debug ('Write to SQL File: %s' % sql_filename)
+	debug ('Write to SQL File: %s' % sql_filename)
 	if VERBOSE:
 		debug ('Verbose output: True')
 	
@@ -321,9 +275,8 @@ def setPointCoordinates ():
 	race3 = lookupTerm ('Sequence Tag Method', "3' Race")
 
 	upstream = lookupTerm ('Gene Trap Vector End', 'upstream')
-	downstream = lookupTerm ('Gene Trap Vector End', 'downstream')
-
-	revComp = lookupTerm ('Reverse Complement', 'yes')
+	#downstream = lookupTerm ('Gene Trap Vector End', 'downstream')
+	#revComp = lookupTerm ('Reverse Complement', 'yes')
 
 	cmd = '''SELECT gt._Sequence_key,
 			gt.pointCoordinate,
@@ -333,9 +286,9 @@ def setPointCoordinates ():
 			gt._TagMethod_key,
 			gt._VectorEnd_key,
 			gt._ReverseComp_key
-		FROM SEQ_GeneTrap gt left outer join
-		SEQ_Coord_Cache cc  on
-			gt._Sequence_key = cc._Sequence_key'''
+		FROM SEQ_GeneTrap gt 
+			left outer join SEQ_Coord_Cache cc on gt._Sequence_key = cc._Sequence_key
+		'''
 
 	results = db.sql (cmd, 'auto')
 	LOGGER.log ('diag', 'Retrieved %d sequence coordinates' % len(results))
@@ -398,29 +351,24 @@ def setPointCoordinates ():
 		FROM SEQ_Coord_Cache cc
 		WHERE g._Sequence_key = cc._Sequence_key
 			AND g._Sequence_key IN (%s)'''
-	for sublist in batchList (setToStart, 225):
-		update (cmd1 % ('startCoordinate',
-			','.join (map(str, sublist)) ))
-	LOGGER.log ('diag', 'Set point coord = start for %d sequences' % \
-		len(setToStart))
+	for sublist in batchList (setToStart, 500):
+		update (cmd1 % ('startCoordinate', ','.join (map(str, sublist))))
+	LOGGER.log ('diag', 'Set point coord = start for %d sequences' % len(setToStart))
 
-	for sublist in batchList (setToEnd, 225):
-		update (cmd1 % ('endCoordinate',
-			','.join (map(str, sublist)) ))
-	LOGGER.log ('diag', 'Set point coord = end for %d sequences' % \
-		len(setToEnd))
+	for sublist in batchList (setToEnd, 500):
+		update (cmd1 % ('endCoordinate', ','.join (map(str, sublist))))
+	LOGGER.log ('diag', 'Set point coord = end for %d sequences' % len(setToEnd))
 
-	cmd2 = '''UPDATE SEQ_GeneTrap SET pointCoordinate = null 
+	cmd2 = '''UPDATE SEQ_GeneTrap 
+		SET pointCoordinate = null 
 		WHERE _Sequence_key IN (%s)'''
-	for sublist in batchList (toNull, 225):
-		update (cmd2 % ','.join (map(str, sublist)) )
-	LOGGER.log ('diag', 'Set point coord = null for %d sequences' % \
-		len(toNull))
+	for sublist in batchList (toNull, 500):
+		update (cmd2 % ','.join (map(str, sublist)))
+	LOGGER.log ('diag', 'Set point coord = null for %d sequences' % len(toNull))
 
-	LOGGER.log ('diag',
-		'Left point coordinates as-is for %d sequences' % \
-		(len(results) - len(setToStart) - len(setToEnd) - len(toNull))
-		)
+	LOGGER.log ('diag', 'Left point coordinates as-is for %d sequences' % \
+		(len(results) - len(setToStart) - len(setToEnd) - len(toNull)))
+
 	return
 
 ###------------------------------------------------------------------------###
@@ -438,100 +386,6 @@ def bcpin (table, filename):
 
 	# re-enable indices
 	db.reenableIndices(table)
-
-
-###------------------------------------------------------------------------###
-
-def initLogger ():
-	# Purpose: initialize the logger module by retrieving some key/value
-	#	mappings from the database and passing them on to the logger
-	#	module
-	# Returns: nothing
-	# Assumes: we can query the database
-	# Effects: queries the database, initializes aloMarkerLogger.py,
-	#	caches allele and marker symbols in global variables by key
-	# Throws: propagates all exceptions from db.sql()
-
-	global ALLELE_SYMBOLS, MARKER_SYMBOLS
-
-	# allele keys and symbols
-
-	debug ('in initLogger()')
-
-	cmd = 'SELECT _Allele_key, symbol FROM ALL_Allele'
-	results = db.sql (cmd, 'auto')
-
-	alleles = {}
-	for row in results:
-		alleles[row['_Allele_key']] = row['symbol']
-	aloMarkerLogger.setAlleleSymbols(alleles)
-	LOGGER.log ('diag', 'Retrieved %d allele symbols (for reporting)' % \
-		len(alleles))
-
-	alleles[None] = None
-	ALLELE_SYMBOLS = alleles
-
-	# marker keys and symbols (current and interim)
-
-	cmd = '''SELECT _Marker_key, symbol
-			FROM MRK_Marker
-			WHERE _Organism_key = 1
-				AND _Marker_Status_key IN (1,2,3)'''
-	results = db.sql (cmd, 'auto')
-
-	markers = {}
-	for row in results:
-		markers[row['_Marker_key']] = row['symbol']
-	aloMarkerLogger.setMarkerSymbols(markers)
-	LOGGER.log ('diag', 'Retrieved %d marker symbols (for reporting)' % \
-		len(markers))
-
-	markers[None] = None
-	MARKER_SYMBOLS = markers
-
-	# reference keys and J: numbers for mixed references
-
-	cmd = '''SELECT _RefAssocType_key
-		FROM MGI_RefAssocType
-		WHERE _MGIType_key = 11		-- Allele
-			AND assocType = 'Mixed' '''
-	results = db.sql (cmd, 'auto')
-
-	if len(results) > 0:
-		refAssocType = results[0]['_RefAssocType_key']
-
-		cmd = '''SELECT r._Refs_key, b.jnumID
-			FROM MGI_Reference_Assoc r,
-				BIB_Citation_Cache b
-			WHERE r._Refs_key = b._Refs_key
-				AND r._RefAssocType_key = %d''' % refAssocType
-		results = db.sql (cmd, 'auto')
-
-		jnums = {}
-		for row in results:
-			jnums[row['_Refs_key']] = row['jnumID']
-		aloMarkerLogger.setReferences (jnums)
-		LOGGER.log ('diag', 'Retrieved %d J: numbers (for reporting)'\
-			% len(jnums))
-
-	# sequence keys and IDs for sequences associated with alleles
-
-	cmd = '''SELECT s._Sequence_key, a.accID
-		FROM SEQ_Allele_Assoc s,
-			ACC_Accession a 
-		WHERE s._Sequence_key = a._Object_key
-			AND a._MGIType_key = 19
-			AND a.private = 0
-			AND a.preferred = 1'''
-	results = db.sql (cmd, 'auto')
-
-	seqs = {}
-	for row in results:
-		seqs[row['_Sequence_key']] = row['accID']
-	aloMarkerLogger.setSeqIDs (seqs)
-	LOGGER.log ('diag', 'Retrieved %d sequence IDs (for reporting)' % \
-		len(seqs))
-	return
 
 ###------------------------------------------------------------------------###
 
@@ -560,7 +414,7 @@ def writeGffFile (fp,		# file pointer, opened for writing
 				'-',				# unused
 				row['strand'],
 				'-',				# unused
-				row[idField]) )
+				row[idField]))
 	fp.close()
 	return
 
@@ -573,9 +427,6 @@ def writeSequenceGff():
 	# Effects: queries database, writes to file system
 	# Throws: propagates all exceptions from querying database or from
 	#	writing to file system
-
-	upstream = lookupTerm ('Gene Trap Vector End', 'upstream')
-	notRevComp = lookupTerm ('Reverse Complement', 'no')
 
 	# we are seeking gene trap sequences which have coordinates
 
@@ -594,8 +445,7 @@ def writeSequenceGff():
 			AND cc.startCoordinate is not null'''
 
 	results = db.sql (cmd, 'auto')
-	LOGGER.log ('diag', 'Got %d gene trap sequences with coordinates' % \
-		len(results))
+	LOGGER.log ('diag', 'Got %d gene trap sequences with coordinates' % len(results))
 
 	pcCt = 0	# number of sequences with point coordinates
 
@@ -609,18 +459,16 @@ def writeSequenceGff():
 			row['endCoordinate'] = row['pointCoordinate']
 			pcCt = pcCt + 1
 
-	LOGGER.log ('diag', 'Using point coordinate for comparison ' + \
-		'on %d sequences' % pcCt)
-	LOGGER.log ('diag', 'Using start/end coordinates for comparison ' + \
-		'on %d sequences' % (len(results) - pcCt) )
+	LOGGER.log ('diag', 'Using point coordinate for comparison on %d sequences' % pcCt)
+	LOGGER.log ('diag', 'Using start/end coordinates for comparison on %d sequences' % (len(results) - pcCt))
 
-	# write sequences to temporary file
+	# write sequences to input file directory
 
-	path = getTempFile ('sequences.', '.gff')
-	seqFile = open (path, 'w')
+        seqFileName = os.path.join (INPUTDIR, 'sequences.gff')
+        seqFile = open(seqFileName, 'w')
 	writeGffFile (seqFile, results, '-', 'Sequence', '_Sequence_key')
-	LOGGER.log ('diag', 'Wrote file of sequence data to: %s' % path)
-	return path
+	LOGGER.log ('diag', 'Wrote file of sequence data to: %s' % seqFileName)
+	return seqFileName
 
 ###------------------------------------------------------------------------###
 
@@ -648,16 +496,15 @@ def writeMarkerGff():
 			AND m._Marker_Type_key IN (1, 7)
 			AND m._Marker_Status_key IN (1,2,3)'''
 	results = db.sql (cmd, 'auto')
-	LOGGER.log ('diag', 'Retrieved %d markers with coordinates' % \
-		len(results))
+	LOGGER.log ('diag', 'Retrieved %d markers with coordinates' % len(results))
 
-	# write markers to temporary GFF-formatted file
+	# write markers to input file directory
 
-	path = getTempFile ('markers.', '.gff')
-	mrkFile = open (path, 'w')
+        mrkFileName = os.path.join (INPUTDIR, 'markers.gff')
+        mrkFile = open (mrkFileName, 'w')
 	writeGffFile (mrkFile, results, '-', 'Marker', '_Marker_key')
-	LOGGER.log ('diag', 'Wrote file of marker data to: %s' % path)
-	return path
+	LOGGER.log ('diag', 'Wrote file of marker data to: %s' % mrkFileName)
+	return mrkFileName
 
 ###------------------------------------------------------------------------###
 
@@ -674,7 +521,12 @@ def fjoin (
 	#	running fjoin via runCommand
 
 	debug ('in fjoin()')
-	path = getTempFile ('fjoin.', '.out')
+
+	# name of fjoin file
+        fjoinpath = os.path.join (INPUTDIR, 'fjoin.out')
+
+	# open fjoin file
+        fjoinfp = open (fjoinpath, 'w')
 
 	# if a 'sort' implementation exists, it is a bit faster than just
 	# letting fjoin sort the files in python
@@ -688,15 +540,16 @@ def fjoin (
 	# sorting of input files, and which considers strand when looking for
 	# overlaps
 
-	cmd = '/usr/local/mgi/live/lib/python/fjoin.py ' + \
-			'-1 %s ' % f1 + \
+	cmd = FJOIN_SCRIPT + \
+			' -1 %s ' % f1 + \
 			'-2 %s ' % f2 + \
 			'-s both ' + \
 			'-k 1 ' + \
-			'-o %s%s' % (path, gnuSort)
+			'-o %s%s' % (fjoinpath, gnuSort)
 	debug ('Running: %s' % cmd)
 
 	(stdout, stderr, exitcode) = runCommand (cmd)
+        fjoinfp.close()
 	if (exitcode):
 		bailout ('fJoin failed with exit code: %d -- stderr: %s' % (
 			exitcode, stderr), False)
@@ -705,7 +558,7 @@ def fjoin (
 
 	debug ('fJoin output: <PRE>%s</PRE>' % stderr)
 	LOGGER.log ('diag', 'Ran fjoin on markers and sequences')
-	return path
+	return fjoinpath
 
 ###------------------------------------------------------------------------###
 
@@ -735,13 +588,11 @@ def parseFjoinFile (
 			# to the right.  last column for each file is the
 			# unique ID (which is all we care about).
 
-			pairs.append ( (int(items[9]), int(items[18])) )
+			pairs.append ( (int(items[9]), int(items[18])))
 		else:
 			bailout ('fjoin row with too few columns: %s' % line)
 
-	LOGGER.log ('diag',
-		'Fjoin found %d pairs of overlapping sequences and markers' \
-		% len(pairs) )
+	LOGGER.log ('diag', 'Fjoin found %d pairs of overlapping sequences and markers' % len(pairs))
 
 	# group the fjoin pairs into a dictionary
 	def groupby (
@@ -787,12 +638,8 @@ def splitSingleMarkers (
 		else:
 			multiples[key] = values
 
-	LOGGER.log ('diag',
-		'Identified %d sequences which overlap a single marker' % \
-		len(singles))
-	LOGGER.log ('diag',
-		'Identified %d sequences which overlap multiple markers' % \
-		len(multiples))
+	LOGGER.log ('diag', 'Identified %d sequences which overlap a single marker' % len(singles))
+	LOGGER.log ('diag', 'Identified %d sequences which overlap multiple markers' % len(multiples))
 	return singles, multiples
 
 ###------------------------------------------------------------------------###
@@ -819,9 +666,7 @@ def findSequencesWithNoMarkers (
 		if not seqMrkDict.has_key(k):
 			noMarkers[k] = 1
 
-	LOGGER.log ('diag',
-		'Identified %d sequences which overlap no markers' % \
-		len(noMarkers))
+	LOGGER.log ('diag', 'Identified %d sequences which overlap no markers' % len(noMarkers))
 	return noMarkers
 
 ###------------------------------------------------------------------------###
@@ -989,10 +834,8 @@ def updateRepSeqs (
 	debug ('in updateRepSeqs()')
 
 	# term key for 'representative' qualifier and N/A qualifier
-	repQualifier = lookupTerm ("Sequence Allele Association Qualifier",
-		"Representative")
-	notAppQualifier = lookupTerm ("Sequence Allele Association Qualifier",
-		"Not Applicable")
+	repQualifier = lookupTerm ('Sequence Allele Association Qualifier', 'Representative')
+	notAppQualifier = lookupTerm ('Sequence Allele Association Qualifier', 'Not Applicable')
 
 	# get the set of sequence/allele associations, and the current
 	# representative flags
@@ -1002,13 +845,11 @@ def updateRepSeqs (
 			a._Sequence_key,
 			a._Qualifier_key,
 			g._TagMethod_key
-		FROM SEQ_Allele_Assoc a left outer join
-		SEQ_GeneTrap g on 
-			a._Sequence_key = g._Sequence_key'''
+		FROM SEQ_Allele_Assoc a 
+			LEFT OUTER JOIN SEQ_GeneTrap g ON a._Sequence_key = g._Sequence_key'''
 	results = db.sql (cmd, 'auto')
 
-	LOGGER.log ('diag', 'Retrieved %d sequence/allele associations' % \
-		len(results))
+	LOGGER.log ('diag', 'Retrieved %d sequence/allele associations' % len(results))
 
 	alleles = {}		# allele key -> list of rows from results
 	seqToAllele = {}	# seq key -> list of allele keys
@@ -1076,31 +917,22 @@ def updateRepSeqs (
 	# un-flag all the newly-demoted associations
 
 	demoted.sort()
-	demotedSublists = batchList(demoted, 100)
-	cmd = '''UPDATE SEQ_Allele_Assoc
-		SET _Qualifier_key = %d
-		WHERE _Assoc_key IN (%s)'''
+	demotedSublists = batchList(demoted, 500)
+	cmd = 'UPDATE SEQ_Allele_Assoc SET _Qualifier_key = %d WHERE _Assoc_key IN (%s)'
 	for sublist in demotedSublists:
 		update (cmd % (notAppQualifier, ','.join(map (str, sublist))))
-	LOGGER.log ('diag',
-	  'Demoted %d previously representative sequence/allele associations'\
-		% len(demoted))
+	LOGGER.log ('diag', 'Demoted %d previously representative sequence/allele associations' % len(demoted))
 
 	# flag all the newly-promoted associations
 
 	promoted.sort()
-	promotedSublists = batchList(promoted, 100)
-	cmd = '''UPDATE SEQ_Allele_Assoc
-		SET _Qualifier_key = %d
-		WHERE _Assoc_key IN (%s)''' % (repQualifier, '%s')
+	promotedSublists = batchList(promoted, 500)
+	cmd = 'UPDATE SEQ_Allele_Assoc SET _Qualifier_key = %d WHERE _Assoc_key IN (%s)' % (repQualifier, '%s')
 	for sublist in promotedSublists:
-		update (cmd % ','.join(map (str, sublist)) )
-	LOGGER.log ('diag',
-		'Promoted %d new representative sequence/allele associations'\
-		% len(promoted))
+		update (cmd % ','.join(map (str, sublist)))
+	LOGGER.log ('diag', 'Promoted %d new representative sequence/allele associations' % len(promoted))
 
-	LOGGER.log ('diag',
-		'Left %d sequence/allele associations as-is' % asIs)
+	LOGGER.log ('diag', 'Left %d sequence/allele associations as-is' % asIs) 
 
 	return seqToAllele, repSeqs
 
@@ -1122,23 +954,18 @@ def updateMarkerAssoc (
 
 	debug ('in updateMarkerAssoc()')
 
-	# get a couple term keys that we will need for the associations
+	# get set of alleles associated with nomen markers 
+	# (the load should not alter marker associations for these alleles)
 
-	notApp = lookupTerm ('Marker-Allele Association Qualifier',
-		'Not Specified')
-	loadedTerm = lookupTerm ('Marker-Allele Association Status', 'Loaded')
-
-	# get set of alleles associated with nomen markers (the load should 
-	# not alter marker associations for these alleles)
-
-	nomenAlleles = {}
 	symbols = {}
-	cmd = '''SELECT _Allele_key, symbol, nomenSymbol
-		FROM ALL_Allele '''
+	cmd = '''
+  	      SELECT a._Allele_key, a.symbol
+	      FROM ALL_Allele a
+	      WHERE EXISTS (SELECT 1 FROM SEQ_Allele_Assoc s where a._Allele_key = s._Allele_key)
+	      AND a.nomenSymbol IS NULL
+	      '''
 	results = db.sql(cmd, 'auto')
 	for row in results:
-		if row['nomenSymbol'] != None:
-			nomenAlleles[row['_Allele_key']] = row['nomenSymbol']
 		symbols[row['_Allele_key']] = row['symbol']
 
 	# build mappings from alleles to markers, and vice versa...
@@ -1167,18 +994,11 @@ def updateMarkerAssoc (
 				repSeqs[alleleKey] != seqKey:
 					continue
 
-			# 1. if this allele is associated with a nomen marker
-			# then skip it; 2. if we already have this allele key
+			# if we already have this allele key
 			# and it's for another marker, then report the
 			# conflict and just leave the original marker
 
-			if nomenAlleles.has_key(alleleKey):
-				LOGGER.log ('Has Nomen Marker',
-					(alleleKey, symbols[alleleKey],
-					nomenAlleles[alleleKey],
-					mrkKey) )
-
-			elif not all2mrk.has_key(alleleKey):
+			if not all2mrk.has_key(alleleKey):
 				all2mrk[alleleKey] = mrkKey
 			
 				# collect all allele keys for each marker
@@ -1188,9 +1008,8 @@ def updateMarkerAssoc (
 				elif alleleKey not in mrk2all[mrkKey]:
 					mrk2all[mrkKey].append (alleleKey)
 
-			elif all2mrk[alleleKey] != mrkKey:
-				LOGGER.log ('Multiple Markers',
-					(alleleKey, seqKey, markers) )
+			#elif all2mrk[alleleKey] != mrkKey:
+				#LOGGER.log ('Multiple Markers', (alleleKey, seqKey, markers))
 
 	# do reporting of alleles with multi-marker sequences
 
@@ -1211,18 +1030,20 @@ def updateMarkerAssoc (
 				repSeqs[alleleKey] != seqKey:
 					continue
 
-			LOGGER.log ('Multiple Markers', (alleleKey, seqKey,
-				markers) )
+			LOGGER.log ('Multiple Markers', (alleleKey, seqKey, markers))
 
 	# get the set of all alleles currently associated with each marker
 
-	cmd = '''SELECT a._Allele_key,
+	cmd = '''
+	        SELECT a._Allele_key,
 			a._Marker_key,
 			a._Refs_key,
 			t.term
-		FROM ALL_Allele a,
-			VOC_Term t
-		where a._MarkerAllele_Status_key = t._Term_key'''
+		FROM ALL_Allele a, VOC_Term t
+	        WHERE EXISTS (SELECT 1 FROM SEQ_Allele_Assoc s where a._Allele_key = s._Allele_key)
+	        AND a.nomenSymbol IS NULL
+		AND a._MarkerAllele_Status_key = t._Term_key
+		'''
 	results = db.sql (cmd, 'auto')
 
 	allAssoc = {}			# all associated alleles
@@ -1244,11 +1065,9 @@ def updateMarkerAssoc (
 		else:
 			loadAssoc[row['_Allele_key']] = row
 
-	LOGGER.log ('diag', 'Retrieved %d marker/allele associations' % \
-		len(allAssoc))
+	LOGGER.log ('diag', 'Retrieved %d marker/allele associations' % len(allAssoc))
 
-	# Now, reconcile the currently-stored associations with those we need
-	# to have.
+	# reconcile the currently-stored associations with those we need to have.
 
 	revisedAlleles = {}	# dictionary of allele keys w/revisions
 
@@ -1271,10 +1090,9 @@ def updateMarkerAssoc (
 
 	# 2. If a curated association appears in mixedAlleles, report it.
 	
-	for (alleleKey, assoc) in curAssoc.items():
-		if mixedAlleles.has_key(alleleKey):
-			LOGGER.log ('Curated Mixed',
-				(alleleKey, assoc['_Marker_key']) )
+	#for (alleleKey, assoc) in curAssoc.items():
+	#	if mixedAlleles.has_key(alleleKey):
+	#		LOGGER.log ('Curated Mixed', (alleleKey, assoc['_Marker_key']))
 
 	# 3. If an association appears in singleMarkers that is not in the
 	#	set of all associations, and if the allele is not in 
@@ -1289,7 +1107,7 @@ def updateMarkerAssoc (
 		# if this is a novel association, we must add it
 
 		if not allAssoc.has_key(alleleKey):
-			toAdd.append ( (alleleKey, markerKey) )
+			toAdd.append ( (alleleKey, markerKey))
 			revisedAlleles[alleleKey] = 1
 		else:
 			# if the allele is already associated in the database
@@ -1303,58 +1121,51 @@ def updateMarkerAssoc (
 					(alleleKey,
 					allAssoc[alleleKey]['_Marker_key'],
 					markerKey,
-					allAssoc[alleleKey]['term']) )
+					allAssoc[alleleKey]['term']))
 				else:
 				    # old assoc is already deleted by code
 				    # above (see toDelete); just add new one
 
-				    toAdd.append ( (alleleKey, markerKey) )
+				    toAdd.append ( (alleleKey, markerKey))
 				    revisedAlleles[alleleKey] = 1
 
 	# apply the deletions
 
-	sublists = batchList (toDelete, 100)
-	cmd = """
+	sublists = batchList (toDelete, 500)
+	cmd = '''
 		UPDATE ALL_Allele 
 		set _Marker_key = null,
 			 _modifiedby_key = %d,
 			modification_date = now()
 		WHERE _Allele_key IN (%%s)
-	""" % USER
+	      ''' % USER
 	for sublist in sublists:
-		update (cmd % ','.join (map (str, sublist)) )
+		update (cmd % ','.join (map (str, sublist)))
 		for alleleKey in sublist:
 			clearLoadedNote(alleleKey)
-	LOGGER.log ('diag',
-		'Removed %d previously loaded allele/marker associations' % \
-		len(toDelete))
 
-	LOGGER.log ('diag',
-		'Left %d previously loaded allele/marker associations as-is' \
-		% (len(loadAssoc) - len(toDelete)) )
+	LOGGER.log ('diag', 'Removed %d previously loaded allele/marker associations' % len(toDelete))
+	LOGGER.log ('diag', 'Left %d previously loaded allele/marker associations as-is' % (len(loadAssoc) - len(toDelete))) 
 
 	# apply the additions, getting a new assoc key at each step
 
 	for (alleleKey, markerKey) in toAdd:
-		update ("""
+		update ('''
 			UPDATE ALL_Allele
 			set _Marker_key = %d,
 				_modifiedby_key = %d,
 				modification_date = now()
 			WHERE _Allele_key = %d
-			""" % (markerKey, USER, alleleKey))
+			''' % (markerKey, USER, alleleKey))
 
-	LOGGER.log ('diag', 'Added %d new allele/marker associations to ALL_Allele._marker_key'\
-		% len(toAdd))
+	LOGGER.log ('diag', 'Added %d new allele/marker associations to ALL_Allele._marker_key' % len(toAdd))
 
 	changed = 0
 	for (alleleKey, markerKey) in toAdd:
 		if setMolecularNote (alleleKey, NOTE_A):
 			changed = changed + 1
 
-	LOGGER.log ('diag',
-	'Identified %d new type A molecular notes (loaded association based on overlap)'\
-		% changed)
+	LOGGER.log ('diag', 'Identified %d new type A molecular notes (loaded association based on overlap)' % changed)
 
 	return revisedAlleles.keys()
 
@@ -1377,37 +1188,29 @@ def updateSymbols (
 
 	invalidatedKey = 4268546		# term: "Curator Invalidated"
 
-	cmd = '''SELECT a._Allele_key,
+	cmd = '''
+	        SELECT a._Allele_key,
 			a._Marker_key,
-			a._MarkerAllele_Status_key
+			a._MarkerAllele_Status_key,
+			a.symbol as alleleSymbol,
+			m.symbol as markerSymbol
 		FROM ALL_Allele a
-		WHERE a._Allele_key IN (%s) '''
+			LEFT OUTER JOIN MRK_Marker m ON a._Marker_key = m._Marker_key
+		WHERE a._Allele_key IN (%s) 
+		'''
 
-	# break 'alleles' into smaller lists so we don't go beyond Sybase
+	# break 'alleles' into smaller lists so we don't go beyond database
 	# limits; run the queries, and join the results together in 'current'
 
-	sublists = batchList(alleles, 100)
+	sublists = batchList(alleles, 500)
 	for sublist in sublists:
 		results = db.sql (cmd % ','.join (map (str, sublist)), 'auto')
+	        LOGGER.log ('debug', str(results))
 		current = current + results
-
-	# pick up already-cached symbols
-	for row in current:
-		print row
-		row['alleleSymbol'] = ALLELE_SYMBOLS[row['_Allele_key']]
-		row['markerSymbol'] = MARKER_SYMBOLS[row['_Marker_key']]
 
 	LOGGER.log ('diag', 'Retrieved %d allele symbols' % len(current))
 
-	# try to tweak performance by throwing the new allele symbols in a
-	# temp table with no indexes, then just do a single update statement
-	# to apply the changes to ALL_Allele
-
-	cmd = "INSERT into tmp_allSym (symbol, _Allele_key) VALUES ('%s', %d)"
-
-	update ('''CREATE temp TABLE tmp_allSym (
-		_Allele_key int not null,
-		symbol text not null)''')
+	cmd =  '''UPDATE ALL_Allele SET symbol = '%s' WHERE _Allele_key = %s'''
 
 	# now, loop through all the alleles and update each individually
 
@@ -1438,21 +1241,13 @@ def updateSymbols (
 			alleleSymbol = '%s<%s>' % (markerSymbol, alleleSymbol)
 
 		if (originalSymbol != alleleSymbol):
-			update (cmd % (alleleSymbol, alleleKey) )
-			updated = updated + 1
+			update (cmd % (alleleSymbol, alleleKey))
 		else:
 			asIs = asIs + 1
 
-	if updated:
-		update ('''create unique index tmp_allSym_index1
-			on tmp_allSym (_Allele_key, symbol)''')
-		update ('''UPDATE ALL_Allele a
-			SET symbol = t.symbol
-			FROM tmp_allSym t
-			WHERE a._Allele_key = t._Allele_key''')
 	LOGGER.log ('diag', 'Updated %d allele symbols' % updated)
 	LOGGER.log ('diag', 'Left %d allele symbols as-is (for alleles with altered marker associations)' % asIs)
-	update ('DROP TABLE tmp_allSym')
+
 	return
 
 ###------------------------------------------------------------------------###
@@ -1524,11 +1319,8 @@ def flagMixedAlleles():
 			a.isMixed,
 			ra._Refs_key
 		FROM MGI_Reference_Assoc ra,
-			MGI_RefAssocType rat,
 			ALL_Allele a
-		WHERE rat._MGIType_key = 11
-			AND rat.assocType = 'Mixed'
-			AND rat._RefAssocType_key = ra._RefAssocType_key
+		WHERE ra._RefAssocType_key = 1024
 			AND ra._Object_key = a._Allele_key'''
 
 	curated = {}		# allele keys with curated isMixed flags
@@ -1544,11 +1336,9 @@ def flagMixedAlleles():
 
 		if row['isMixed'] == 1:
 			mixed[alleleKey] = 1
-			LOGGER.log ('Mixed Refs', 
-				(row['_Allele_key'], row['_Refs_key']) )
+			#LOGGER.log ('Mixed Refs', row['_Allele_key'], row['_Refs_key']))
 
-	LOGGER.log ('diag', 'Found %d alleles with curated isMixed flags' % \
-		len(curated))
+	LOGGER.log ('diag', 'Found %d alleles with curated isMixed flags' % len(curated))
 
 	# Get all alleles, their associated sequences, the coordinates for
 	# those sequences, and their gene trap tag methods.  This only
@@ -1589,7 +1379,7 @@ def flagMixedAlleles():
 			else:
 				alleles[alleleKey] = [ row ]
 
-	LOGGER.log ('diag', 'Retrieved coordinates for %d alleles and their %d associated sequences' % (len(alleles), len(results)) )
+	LOGGER.log ('diag', 'Retrieved coordinates for %d alleles and their %d associated sequences' % (len(alleles), len(results)))
 
 	# An allele is mixed if (using only DNA-based seq tags) it...
 	# 1. has >1 sequence, and
@@ -1628,8 +1418,7 @@ def flagMixedAlleles():
 
 			if mixedNow:
 				mixed[allele] = 1
-				LOGGER.log ("Mixed",
-					(allele, seqs) )
+				#LOGGER.log ("Mixed", (allele, seqs))
 
 	cmd = """ 
 	    UPDATE ALL_Allele 
@@ -1641,10 +1430,10 @@ def flagMixedAlleles():
 
 	# update alleles which now need to be flagged as mixed
 
-	for sublist in batchList (setMixed, 100):
-		update (cmd % (1, ','.join (map (str, sublist)) ) )
+	for sublist in batchList (setMixed, 500):
+		update (cmd % (1, ','.join (map (str, sublist))) )
 	LOGGER.log ('diag', 'Flagged %d alleles as now being mixed' % \
-		len(setMixed) )
+		len(setMixed))
 
 	changed = 0
 	for alleleKey in setMixed:
@@ -1655,8 +1444,8 @@ def flagMixedAlleles():
 
 	# clear alleles which are no longer mixed
 
-	for sublist in batchList (clearMixed, 100):
-		update (cmd % (0, ','.join (map (str, sublist)) ) )
+	for sublist in batchList (clearMixed, 500):
+		update (cmd % (0, ','.join (map (str, sublist))) )
 		for alleleKey in sublist:
 			clearLoadedNote(alleleKey)
 	LOGGER.log ('diag', 'Removed isMixed flag for %d alleles' % \
@@ -1681,26 +1470,15 @@ def setupNoteCache ():
 
 	debug ('in setupNoteCache()')
 
-	# database keys we are using
-	dbKeys = {
-	    # 'Molecular' note type
-	    'notetype': 1021,
-	    # Allele type
-	    'mgitype': 11,
-	    # 'alomrkload' user
-	    'user': USER
-	}
-	
-
 	# just set a flag if an allele has a curated molecular note; we must
 	# not change these ones
 	cmd = '''
 	    SELECT _Object_key
 	    FROM MGI_Note
-	    WHERE _NoteType_key = %(notetype)d
-		    AND _MGIType_key = %(mgitype)d
-		    AND _ModifiedBy_key != %(user)d
-	''' % dbKeys
+	    WHERE _NoteType_key = 1021
+		    AND _MGIType_key = 11
+		    AND _ModifiedBy_key != %s
+	''' % (USER)
 
 	results = db.sql(cmd, 'auto')
 	for row in results:
@@ -1713,12 +1491,12 @@ def setupNoteCache ():
 	    SELECT n._Object_key, n._Note_key, c.note
 	    FROM MGI_Note n,
 		    MGI_NoteChunk c
-	    WHERE n._NoteType_key = %(notetype)d
-		    AND n._MGIType_key = %(mgitype)d
-		    AND n._ModifiedBy_key = %(user)d
+	    WHERE n._NoteType_key = 1021
+		    AND n._MGIType_key = 11
+		    AND n._ModifiedBy_key = %s
 		    AND n._Note_key = c._Note_key
 	    ORDER BY c._Note_key, c.sequenceNum
-	''' % dbKeys
+	''' % (USER)
 
 	results = db.sql(cmd, 'auto')
 	for row in results:
@@ -1739,7 +1517,7 @@ def setupNoteCache ():
 	results = db.sql(cmd, 'auto')
 	NEXT_NOTE_KEY = results[0]['maxKey'] + 1
 	LOGGER.log ('diag', 'Retrieved %d existing molecular notes' % \
-		(len(CURATED_NOTES) + len(LOADED_NOTES)) )
+		(len(CURATED_NOTES) + len(LOADED_NOTES)))
 	return
 
 ###------------------------------------------------------------------------###
@@ -1784,12 +1562,12 @@ def setMolecularNote (alleleKey, note):
 	else:
 		noteKey = NEXT_NOTE_KEY
 		NEXT_NOTE_KEY = NEXT_NOTE_KEY + 1
-		NOTES_TO_ADD.append ( (noteKey, alleleKey) )
+		NOTES_TO_ADD.append ( (noteKey, alleleKey))
 
 
 	i = 1
 	for chunk in getNoteChunks(note):
-		CHUNKS_TO_ADD.append ( (noteKey, i, chunk) )
+		CHUNKS_TO_ADD.append ( (noteKey, i, chunk))
 		i = i + 1
 	return True
 
@@ -1847,7 +1625,7 @@ def updateMolecularNotes():
 		fp = open (os.path.join (OUTPUTDIR, noteFile), 'w')
 		for (noteKey, alleleKey) in NOTES_TO_ADD:
 			fp.write ('%d\t%d\t11\t1021\t%d\t%d\t%s\t%s\n' % (
-				noteKey, alleleKey, USER, USER, NOW, NOW) )
+				noteKey, alleleKey, USER, USER, NOW, NOW))
 		fp.close()
 
 	if hasChunks:
@@ -1863,21 +1641,21 @@ def updateMolecularNotes():
 		LOGGER.log ('diag', 'No new molecular notes')
 
 	if CHUNKS_TO_DELETE:
-		sublists = batchList (CHUNKS_TO_DELETE, 200)
+		sublists = batchList (CHUNKS_TO_DELETE, 500)
 		for sublist in sublists:
 			update ('''DELETE FROM MGI_NoteChunk 
 				WHERE _Note_key IN (%s)''' % (','.join (
-					map (str, sublist) )) )
+					map (str, sublist))) )
 		LOGGER.log ('diag',
 			'Removed chunks for %d old molecular notes' % \
 			len(CHUNKS_TO_DELETE))
 
 	if NOTES_TO_DELETE:
-		sublists = batchList (NOTES_TO_DELETE, 200)
+		sublists = batchList (NOTES_TO_DELETE, 500)
 		for sublist in sublists:
 			update ('''DELETE FROM MGI_Note
 				WHERE _Note_key IN (%s)''' % (','.join (
-					map (str, sublist) )) )
+					map (str, sublist))) )
 		LOGGER.log ('diag',
 			'Removed whole notes for %d old molecular notes' % \
 			len(NOTES_TO_DELETE))
@@ -1923,7 +1701,7 @@ def setSequenceTagMolecularNotes(mixedAlleles):
 			ALL_Allele allele
 		WHERE t._Sequence_key = a._Sequence_key
 			AND a._allele_key = allele._allele_key
-			AND allele._Marker_key is null
+			AND allele._Marker_key IS NULL
 	'''
 	results = db.sql (cmd, 'auto')
 
@@ -1962,7 +1740,7 @@ def reportMixed(seqMrkDict):
 		FROM ALL_Allele a,
 			SEQ_Allele_Assoc s
 		WHERE a._Allele_key = s._Allele_key
-			AND a.isMixed = 1'''
+		AND a.isMixed = 1'''
 	results = db.sql (cmd, 'auto')
 
 	alleles = {}
@@ -1977,14 +1755,13 @@ def reportMixed(seqMrkDict):
 		seqs = []
 		for seqKey in seqKeys:
 			if seqMrkDict.has_key(seqKey):
-				seqs.append ( (seqKey, seqMrkDict[seqKey]) )
+				seqs.append ( (seqKey, seqMrkDict[seqKey]))
 			else:
-				seqs.append ( (seqKey, []) )
+				seqs.append ( (seqKey, []))
 
-		LOGGER.log ('Mixed With Markers', (alleleKey, seqs) )
+		#LOGGER.log ('Mixed With Markers', (alleleKey, seqs))
 
-	LOGGER.log ('diag',
-		'Logged sequence and marker overlaps for mixed alleles')
+	LOGGER.log ('diag', 'Logged sequence and marker overlaps for mixed alleles')
 	return
 
 ###------------------------------------------------------------------------###
@@ -2047,7 +1824,7 @@ def writeLogFile (
 	fp.write ('<OL>\n')
 	for (logName, logTitle, logWriter) in logs:
 		fp.write ('<LI><A HREF="#%s">%s</A></LI>\n' % (
-			logTitle, logTitle) )
+			logTitle, logTitle))
 	fp.write ('</OL>\n')
 	fp.write ('<HR>\n')
 	for (logName, logTitle, logWriter) in logs:
@@ -2056,50 +1833,6 @@ def writeLogFile (
 
 	fp.write ('</BODY></HTML>\n')
 	fp.close()
-	return
-
-###------------------------------------------------------------------------###
-
-def writeCuratorLogs(excInfo = None):
-	# Purpose: write the curatorial logs for this process, including any
-	#	exception (in 'excInfo') that caused its termination
-	# Returns: nothing
-	# Assumes: we can write to the file system
-	# Effects: writest to the file system
-	# Throws: any exceptions raised by writing to the file system
-
-	logs = [
-		('Has Nomen Marker',
-		'Alleles with Nomen Markers which overlap a current marker',
-		aloMarkerLogger.NomenMarkerWriter() ),
-
-		('Multiple Markers',
-		'Alleles with multiple Marker associations by overlap',
-		aloMarkerLogger.MultiMarkerWriter() ),
-
-		('Curated Mixed',
-		'Mixed Alleles with curated Marker associations',
-		aloMarkerLogger.CuratedAssocMixedWriter() ),
-
-		('Marker Mismatch',
-		'Alleles associated with a Marker other than one they overlap',
-		aloMarkerLogger.MultiMarkerStatusWriter() ),
-
-		('Mixed Refs',
-		'Alleles with curated isMixed flag',
-		aloMarkerLogger.MixedRefsWriter() ),
-
-		('Mixed',
-		'Alleles flagged by load as being mixed',
-		aloMarkerLogger.MixedSeqWriter() ),
-
-		('Mixed With Markers',
-		'Mixed Alleles with their sequences and overlapping markers',
-		aloMarkerLogger.MixedMarkerWriter() ),
-		]
-
-	writeLogFile (excInfo, 'alomrkload.cur.html', logs,
-		'ALO/Marker Assoc Curator Logs')
 	return
 
 ###------------------------------------------------------------------------###
@@ -2114,9 +1847,9 @@ def writeDiagLog(excInfo = None):
 
 	logs = [
 		('diag', 'Diagnostic Log', 
-			aloMarkerLogger.ProfilingLogWriter() ),
+			aloMarkerLogger.ProfilingLogWriter()),
 		('debug', 'Debug Log', 
-			aloMarkerLogger.AloMarkerLogWriterHTML() ),
+			aloMarkerLogger.AloMarkerLogWriterHTML()),
 		]
 
 	writeLogFile (excInfo, 'alomrkload.diag.html', logs, 
@@ -2134,7 +1867,6 @@ def writeLogs(errorString = None):
 	#	system
 
 	debug ('in writeLogs()')
-	writeCuratorLogs(errorString)
 	writeDiagLog(errorString)
 	return
 
@@ -2150,8 +1882,6 @@ def main():
 	processCommandLine()			# process command-line args
 
 	try:
-	    initLogger()				# initialize logger module
-		
 	    # updates DB
 	    setPointCoordinates()			# set seqs' point coordinates
 
@@ -2161,9 +1891,9 @@ def main():
 	    # find overlaps between sequences and markers (using fjoin for
 	    # performance)
 
-	    seqFile = writeSequenceGff()
-	    mrkFile = writeMarkerGff()
-	    fjoinFile = fjoin (seqFile, mrkFile)
+	    seqFileName = writeSequenceGff()
+	    mrkFileName = writeMarkerGff()
+	    fjoinFile = fjoin (seqFileName, mrkFileName)
 
 	    # read fjoin results as a list of (seq, marker) pairs, then convert
 	    # to a dictionary mapping sequence key to list of marker keys
@@ -2182,7 +1912,6 @@ def main():
 
 	    # updates DB
 	    mixedAlleles = flagMixedAlleles() 
-
 	    reportMixed (seqMrkDict)
 
 	    # update the choice of representative sequence for each allele
@@ -2214,18 +1943,9 @@ def main():
 	finally:
 
 	    # close of the output file of SQL statements, if we have one
-
-	    if SQL_FILE:
-		    SQL_FILE.close()
-
-	    # delete all temp files, to clean up after ourselves
-
-	    for file in TEMP_FILES:
-		    os.remove (file)
-	    LOGGER.log ('diag', 'Removed temp files')
+	    SQL_FILE.close()
 
 	    # write logs...
-
 	    writeLogs()
 
 	return
