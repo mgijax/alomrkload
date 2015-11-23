@@ -1205,7 +1205,7 @@ def updateSymbols (
 	sublists = batchList(alleles, 500)
 	for sublist in sublists:
 		results = db.sql (cmd % ','.join (map (str, sublist)), 'auto')
-	        LOGGER.log ('debug', str(results))
+	        #LOGGER.log ('debug', str(results))
 		current = current + results
 
 	LOGGER.log ('diag', 'Retrieved %d allele symbols' % len(current))
@@ -1242,6 +1242,7 @@ def updateSymbols (
 
 		if (originalSymbol != alleleSymbol):
 			update (cmd % (alleleSymbol, alleleKey))
+			updated = updated + 1
 		else:
 			asIs = asIs + 1
 
