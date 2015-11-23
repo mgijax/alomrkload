@@ -1125,7 +1125,6 @@ def updateMarkerAssoc (
 				else:
 				    # old assoc is already deleted by code
 				    # above (see toDelete); just add new one
-
 				    toAdd.append ( (alleleKey, markerKey))
 				    revisedAlleles[alleleKey] = 1
 
@@ -1883,54 +1882,46 @@ def main():
 	processCommandLine()			# process command-line args
 
 	try:
-	    # updates DB
-	    setPointCoordinates()			# set seqs' point coordinates
+	    # set seqs' point coordinates
+	    setPointCoordinates()			
 
-	    seqLengths = findSequenceLengths()	# get all GT seq lengths
-	    setupNoteCache()			# cache existing mol.notes
+	    # get all GT seq lengths
+	    seqLengths = findSequenceLengths()	
+
+	    # cache existing mol.notes
+	    setupNoteCache()			
 
 	    # find overlaps between sequences and markers (using fjoin for
 	    # performance)
-
 	    seqFileName = writeSequenceGff()
 	    mrkFileName = writeMarkerGff()
 	    fjoinFile = fjoin (seqFileName, mrkFileName)
 
 	    # read fjoin results as a list of (seq, marker) pairs, then convert
 	    # to a dictionary mapping sequence key to list of marker keys
-
 	    seqMrkDict = parseFjoinFile (fjoinFile)
 
 	    # get dictionaries of sequence keys which map to single markers,
 	    # multiple markers, and no markers
-
 	    singleMarkers, multiMarkers = splitSingleMarkers (seqMrkDict)
 	    noMarkers = findSequencesWithNoMarkers (seqMrkDict, seqLengths)
 
 	    # update the isMixed flag for all alleles and get a dictionary
 	    # of allele keys for mixed alleles; also handles setting molecular
 	    # note type D
-
-	    # updates DB
 	    mixedAlleles = flagMixedAlleles() 
 	    reportMixed (seqMrkDict)
 
 	    # update the choice of representative sequence for each allele
-
-	    # updates DB
 	    seqToAllele, repSeqs = updateRepSeqs (singleMarkers, multiMarkers,
 		    noMarkers, mixedAlleles, seqLengths)
 
 	    # update the marker/allele associations, based on sequence overlaps;
 	    # also handle molecular note type A
-
-	    # updates DB
 	    revisedAlleles = updateMarkerAssoc (singleMarkers, seqToAllele,
 		    mixedAlleles, repSeqs, multiMarkers)
 
 	    # update allele symbols to incorporate the new marker associations
-
-	    # updates DB
 	    updateSymbols (revisedAlleles)
 
 	    # set the B and C molecular notes for alleles which are not associated
@@ -1938,7 +1929,6 @@ def main():
 	    setSequenceTagMolecularNotes(mixedAlleles)
 
 	    # apply the cached changes to molecular notes
-	    # updates DB
 	    updateMolecularNotes()
 
 	finally:
