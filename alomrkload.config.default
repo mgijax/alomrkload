@@ -82,10 +82,7 @@ export FJOIN_SCRIPT
 #  name of the load for the subject of an email notification
 MAIL_LOADNAME="ALO Marker Association Load"
 
-#  recipient list for mailing the curation log file (comma-separated)
-MAIL_LOG_CUR="mgiadmin"
-
-export MAIL_LOADNAME MAIL_LOG_CUR
+export MAIL_LOADNAME
 
 # installation directory for this product - for Install script
 INSTALLDIR=${ALOMRKLOAD}
