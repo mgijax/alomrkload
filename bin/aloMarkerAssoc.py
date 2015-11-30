@@ -1954,4 +1954,5 @@ if __name__ == '__main__':
 
 	# commit data if all successful
 	db.commit()
+	db.useOneConnection(0)
 
