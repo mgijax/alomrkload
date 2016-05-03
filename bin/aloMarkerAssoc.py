@@ -1565,10 +1565,7 @@ def setMolecularNote (alleleKey, note):
 		NOTES_TO_ADD.append ( (noteKey, alleleKey))
 
 
-	i = 1
-	for chunk in getNoteChunks(note):
-		CHUNKS_TO_ADD.append ( (noteKey, i, chunk))
-		i = i + 1
+	CHUNKS_TO_ADD.append ( (noteKey, 1, note))
 	return True
 
 ###------------------------------------------------------------------------###
@@ -1668,21 +1665,6 @@ def updateMolecularNotes():
 		bcpin ('MGI_NoteChunk', chunkFile)
 		LOGGER.log ('diag', 'Loaded molecular note chunks by bcp')
 	return
-
-###------------------------------------------------------------------------###
-
-def getNoteChunks (note):
-	"""
-	Return list of 255 char note chunks
-	"""
-
-	chunks = []
-	while len(note) > 255:
-		chunks.append (note[:255])
-		note = note[255:]
-	if note:
-		chunks.append(note)
-	return chunks
 
 ###------------------------------------------------------------------------###
 
