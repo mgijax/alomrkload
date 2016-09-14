@@ -1,3 +1,9 @@
+TAG: alomrkload-6-0-6-1
+DATE: 09/14/2016
+STAFF: lec 
+CHANGES: 
+bin/aloMarkerAssoc.py:updateMarkerAssoc:fixed query
+
 TAG: alomrkload-6-0-5-1
 DATE: 08/19/2016
 STAFF: lec 
