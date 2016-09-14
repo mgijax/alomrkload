@@ -961,8 +961,8 @@ def updateMarkerAssoc (
 	cmd = '''
   	      SELECT a._Allele_key, a.symbol
 	      FROM ALL_Allele a
-	      WHERE EXISTS (SELECT 1 FROM SEQ_Allele_Assoc s where a._Allele_key = s._Allele_key)
-	      AND a.nomenSymbol IS NULL
+	      WHERE a._Allele_Status_key in (847114, 3983021)
+	      AND EXISTS (SELECT 1 FROM SEQ_Allele_Assoc s where a._Allele_key = s._Allele_key)
 	      '''
 	results = db.sql(cmd, 'auto')
 	for row in results:
