@@ -1041,8 +1041,8 @@ def updateMarkerAssoc (
 			t.term
 		FROM ALL_Allele a, VOC_Term t
 	        WHERE EXISTS (SELECT 1 FROM SEQ_Allele_Assoc s where a._Allele_key = s._Allele_key)
-	        AND a.nomenSymbol IS NULL
 		AND a._MarkerAllele_Status_key = t._Term_key
+		AND a._Allele_Status_key in (847114,3983021)
 		'''
 	results = db.sql (cmd, 'auto')
 
