@@ -34,9 +34,6 @@ import mgi_utils
 from runCommand import runCommand
 import aloMarkerLogger
 
-db.setAutoTranslate(False)
-db.setAutoTranslateBE(False)
-
 aloMarkerLogger.DEBUG = True
 
 ###-----------------------###

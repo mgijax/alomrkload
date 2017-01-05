@@ -1,3 +1,9 @@
+TAG: alomrkload-6-0-7-1
+DATE: 01/05/2017
+STAFF: lec 
+CHANGES:
+1) TR12069/obsolete db.setAutoTranslate()
+
 TAG: alomrkload-6-0-6-2
 TAG: alomrkload-6-0-6-1
 DATE: 09/14/2016, 09/20/2016
