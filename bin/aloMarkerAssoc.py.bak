@@ -1,3 +1,4 @@
+
 # Name: aloMarkerAssoc.py
 # Purpose: handle associations between ALOs (Allele-Like Objects) and markers,
 #	and related data.  See USAGE statement below for more information.
@@ -29,7 +30,7 @@ import sys
 import traceback
 import db
 import mgi_utils
-import subprocess
+from runCommand import runCommand
 import aloMarkerLogger
 
 aloMarkerLogger.DEBUG = True
@@ -125,7 +126,7 @@ NEXT_NOTE_KEY = None	# next _Note_key to use when inserting new notes
 ###------------------------------------------------------------------------###
 
 def bailout (
-        msg,			# str. error message to write to user
+        msg,			# string; error message to write to user
         showUsage = True	# boolean; give usage statement or not?
         ):
         # Purpose: to give an error message to the user and exit with an error
@@ -143,7 +144,7 @@ def bailout (
 ###------------------------------------------------------------------------###
 
 def debug (
-        s			# str. message to be given to user
+        s			# string; message to be given to user
         ):
         # Purpose: if running in verbose mode, writes the given message to stdout
         # Returns: nothing
@@ -153,13 +154,13 @@ def debug (
 
         if VERBOSE:
                 LOGGER.log ('debug', s)
-                print('debug: ' + s)
+                print 'debug: ' + s
         return
 
 ###------------------------------------------------------------------------###
 
 def update (
-        cmd		# str. SQL command to update data in the database
+        cmd		# string; SQL command to update data in the database
         ):
         # Purpose: excecute the given 'cmd' command against the database to
         #	update some data
@@ -192,32 +193,32 @@ def processCommandLine():
 
         environ = os.environ
         for var in [ 'MGD_DBSERVER', 'MGD_DBNAME', 'MGD_DBUSER' ]:
-                if var not in environ:
+                if not environ.has_key(var):
                         bailout ('Missing environment variable: %s' % var)
 
         server = environ['MGD_DBSERVER']
         database = environ['MGD_DBNAME']
         user = environ['MGD_DBUSER']
 
-        if 'LOGDIR' in environ:
+        if environ.has_key('LOGDIR'):
                 LOGDIR = environ['LOGDIR']
 
-        if 'INPUTDIR' in environ:
+        if environ.has_key('INPUTDIR'):
                 INPUTDIR = environ['INPUTDIR']
 
-        if 'OUTPUTDIR' in environ:
+        if environ.has_key('OUTPUTDIR'):
                 OUTPUTDIR = environ['OUTPUTDIR']
 
-        if 'FJOIN_SCRIPT' in environ:
+        if environ.has_key('FJOIN_SCRIPT'):
                 FJOIN_SCRIPT = environ['FJOIN_SCRIPT']
 
-        if 'LOG_DEBUG' in environ:
+        if environ.has_key('LOG_DEBUG'):
                 if environ['LOG_DEBUG'].lower() != 'false':
                         VERBOSE = True
 
-        if 'MGD_DBPASSWORD' in environ:
+        if environ.has_key('MGD_DBPASSWORD'):
                 password = environ['MGD_DBPASSWORD']
-        elif 'MGD_DBPASSWORDFILE' in environ:
+        elif environ.has_key('MGD_DBPASSWORDFILE'):
                 try:
                         fp = open (environ['MGD_DBPASSWORDFILE'], 'r')
                         password = fp.readline().strip()
@@ -386,9 +387,9 @@ def bcpin (table, filename):
 
 def writeGffFile (fp,		# file pointer, opened for writing
         rows, 			# list of dictionaries, one for each object
-        source, 		# str. value for sequence source
-        objectType, 		# str. type of object contained in 'rows'
-        idField			# str. name of unique ID field in
+        source, 		# string; value for sequence source
+        objectType, 		# string; type of object contained in 'rows'
+        idField			# string; name of unique ID field in
                                 # ...dictionary in 'rows'
         ):
         # Purpose: write contents of 'rows' into a roughly GFF-formatted file
@@ -417,7 +418,7 @@ def writeGffFile (fp,		# file pointer, opened for writing
 
 def writeSequenceGff():
         # Purpose: retrieve relevant sequence data from the database
-        # Returns: str.-- path to GFF-formatted file of sequences
+        # Returns: string -- path to GFF-formatted file of sequences
         # Assumes: db module has been initialized, can write to file system
         # Effects: queries database, writes to file system
         # Throws: propagates all exceptions from querying database or from
@@ -469,7 +470,7 @@ def writeSequenceGff():
 
 def writeMarkerGff():
         # Purpose: retrieve relevant marker data from the database
-        # Returns: str.-- path to GFF-formatted file of markers
+        # Returns: string -- path to GFF-formatted file of markers
         # Assumes: db module has been initialized, can write to file system
         # Effects: queries database, writes to file system
         # Throws: propagates all exceptions from querying database or from
@@ -504,12 +505,12 @@ def writeMarkerGff():
 ###------------------------------------------------------------------------###
 
 def fjoin (
-        f1,		# str. path to GFF-formatted file of sequences
-        f2		# str. path to GFF-formatted file of markers
+        f1,		# string; path to GFF-formatted file of sequences
+        f2		# string; path to GFF-formatted file of markers
         ):
         # Purpose: execute fjoin script against files 'f1' and 'f2', to
         #	determine where sequences and markers overlap
-        # Returns: str.-- path to temp file with output from fjoin
+        # Returns: string -- path to temp file with output from fjoin
         # Assumes: can read 'f1' and 'f2', and can write a new temp file
         # Effects: reads and writes from file system
         # Throws: propagates exceptions from reading/writing files and from
@@ -543,24 +544,22 @@ def fjoin (
                         '-o %s%s' % (fjoinpath, gnuSort)
         debug ('Running: %s' % cmd)
 
-        try:
-            completed = subprocess.run([cmd], check=True, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        except subprocess.CalledProcessError as err:
-            bailout ('fJoin failed error %s' % (err), False)
-        else:
-            debug ('fJoin returncode: %s' % completed.returncode)
-            debug ('fJoin output: <PRE>%s</PRE>' % completed.stderr)
-            
+        (stdout, stderr, exitcode) = runCommand (cmd)
         fjoinfp.close()
+        if (exitcode):
+                bailout ('fJoin failed with exit code: %d -- stderr: %s' % (
+                        exitcode, stderr), False)
 
         # if running in verbose mode, echo fjoin's reporting output
+
+        debug ('fJoin output: <PRE>%s</PRE>' % stderr)
         LOGGER.log ('diag', 'Ran fjoin on markers and sequences')
         return fjoinpath
 
 ###------------------------------------------------------------------------###
 
 def parseFjoinFile (
-        f			# str. path to file of output from fjoin
+        f			# string; path to file of output from fjoin
         ):
         # Purpose: read and parse fjoin output file 'f'
         # Returns: dictionary of sequence keys to marker keys
@@ -603,7 +602,7 @@ def parseFjoinFile (
                 dict = {}
                 for pair in pairs:
                         key = pair[i]
-                        if key in dict:
+                        if dict.has_key(key):
                                 dict[key].append (pair[j])
                         else:
                                 dict[key] = [ pair[j] ]
@@ -629,7 +628,7 @@ def splitSingleMarkers (
         singles = {}
         multiples = {}
 
-        for (key, values) in list(seqMrkDict.items()):
+        for (key, values) in seqMrkDict.items():
                 if len(values) == 1:
                         singles[key] = values
                 else:
@@ -659,8 +658,8 @@ def findSequencesWithNoMarkers (
         # if a given gene trap sequence has a length, but does not appear in
         # the dictionary of seq-to-marker overlaps, then it has no overlap
 
-        for k in list(lengths.keys()):
-                if k not in seqMrkDict:
+        for k in lengths.keys():
+                if not seqMrkDict.has_key(k):
                         noMarkers[k] = 1
 
         LOGGER.log ('diag', 'Identified %d sequences which overlap no markers' % len(noMarkers))
@@ -699,8 +698,8 @@ def findSequenceLengths():
 ###------------------------------------------------------------------------###
 
 def lookupTerm (
-        vocab, 			# str. name of vocabulary
-        term			# str. name of vocabulary term
+        vocab, 			# string; name of vocabulary
+        term			# string; name of vocabulary term
         ):
         # Porpoise: find the term key for the given 'term' in the given
         #	'vocab'  :)
@@ -745,7 +744,7 @@ def getRepSeq (associations,	# list of dictionaries, each an association
         # 1. if is a mixed allele, designate no representative sequence
         # 2. if allele has only one sequence, designate that one as rep
 
-        if alleleKey in mixedAlleles:
+        if mixedAlleles.has_key(alleleKey):
                 return None
         if len(associations) == 1:
                 return associations[0]
@@ -763,7 +762,7 @@ def getRepSeq (associations,	# list of dictionaries, each an association
         for assoc in associations:
                 seqKey = assoc['_Sequence_key']
 
-                if seqKey in lengths:
+                if lengths.has_key(seqKey):
                         length = lengths[seqKey]
                 else:
                         length = 0			# should not happen
@@ -774,11 +773,11 @@ def getRepSeq (associations,	# list of dictionaries, each an association
                 else:
                         isDNA = 0
 
-                if seqKey in singleMarkers:
+                if singleMarkers.has_key (seqKey):
                         tpl = (3, isDNA, length, seqKey, assoc)
-                elif seqKey in multiMarkers:
+                elif multiMarkers.has_key (seqKey):
                         tpl = (2, isDNA, length, seqKey, assoc)
-                elif seqKey in noMarkers:
+                elif noMarkers.has_key (seqKey):
                         tpl = (1, isDNA, length, seqKey, assoc)
                 else:						# no coords
                         tpl = (0, isDNA, length, seqKey, assoc)
@@ -853,13 +852,13 @@ def updateRepSeqs (
 
         for row in results:
                 alleleKey = row['_Allele_key']
-                if alleleKey in alleles:
+                if alleles.has_key(alleleKey):
                         alleles[alleleKey].append (row)
                 else:
                         alleles[alleleKey] = [ row ]
 
                 seqKey = row['_Sequence_key']
-                if seqKey in seqToAllele:
+                if seqToAllele.has_key(seqKey):
                         seqToAllele[seqKey].append (alleleKey)
                 else:
                         seqToAllele[seqKey] = [ alleleKey ]
@@ -873,7 +872,7 @@ def updateRepSeqs (
 
         # walk through each allele and its associated sequences
 
-        for (alleleKey, associations) in list(alleles.items()):
+        for (alleleKey, associations) in alleles.items():
                 oldRep = None	# previous representative sequence association
                 newRep = None	# new representative sequence association
 
@@ -973,11 +972,11 @@ def updateMarkerAssoc (
         all2mrk = {}	# maps allele key to marker key
         mrk2all = {}	# maps marker key to list of allele keys
 
-        for (seqKey, markers) in list(singleMarkers.items()):
+        for (seqKey, markers) in singleMarkers.items():
                 # if this sequence has no associated alleles (rare), then
                 # skip it
 
-                if seqKey not in seqToAllele:
+                if not seqToAllele.has_key(seqKey):
                         continue
 
                 allKeys = seqToAllele[seqKey]
@@ -987,7 +986,7 @@ def updateMarkerAssoc (
                         # if this sequence is not the representative for this
                         # allele, then skip it
 
-                        if alleleKey in repSeqs and \
+                        if repSeqs.has_key(alleleKey) and \
                                 repSeqs[alleleKey] != seqKey:
                                         continue
 
@@ -995,12 +994,12 @@ def updateMarkerAssoc (
                         # and it's for another marker, then report the
                         # conflict and just leave the original marker
 
-                        if alleleKey not in all2mrk:
+                        if not all2mrk.has_key(alleleKey):
                                 all2mrk[alleleKey] = mrkKey
                         
                                 # collect all allele keys for each marker
 
-                                if mrkKey not in mrk2all:
+                                if not mrk2all.has_key(mrkKey):
                                         mrk2all[mrkKey] = [ alleleKey ]
                                 elif alleleKey not in mrk2all[mrkKey]:
                                         mrk2all[mrkKey].append (alleleKey)
@@ -1010,11 +1009,11 @@ def updateMarkerAssoc (
 
         # do reporting of alleles with multi-marker sequences
 
-        for (seqKey, markers) in list(multiMarkers.items()):
+        for (seqKey, markers) in multiMarkers.items():
                 # if this sequence has no associated alleles (rare), then
                 # skip it
 
-                if seqKey not in seqToAllele:
+                if not seqToAllele.has_key(seqKey):
                         continue
 
                 allKeys = seqToAllele[seqKey]
@@ -1023,7 +1022,7 @@ def updateMarkerAssoc (
                         # if this sequence is not the representative for this
                         # allele, then skip it
 
-                        if alleleKey in repSeqs and \
+                        if repSeqs.has_key(alleleKey) and \
                                 repSeqs[alleleKey] != seqKey:
                                         continue
 
@@ -1074,13 +1073,13 @@ def updateMarkerAssoc (
         toDelete = []		# list of assoc keys to delete
 
         msg = 'mixed allele %d assoc w/marker %d with refs %d'
-        for (alleleKey, assoc) in list(loadAssoc.items()):
-                if alleleKey in mixedAlleles:
+        for (alleleKey, assoc) in loadAssoc.items():
+                if mixedAlleles.has_key(alleleKey):
                         toDelete.append (assoc['_Allele_key'])
                         revisedAlleles[alleleKey] = 1
                 else:
                         markerKey = assoc['_Marker_key']
-                        if (markerKey not in mrk2all) or \
+                        if (not mrk2all.has_key(markerKey)) or \
                                 (alleleKey not in mrk2all[markerKey]):
                                         toDelete.append (assoc['_Allele_key'])
                                         revisedAlleles[alleleKey] = 1
@@ -1097,13 +1096,13 @@ def updateMarkerAssoc (
 
         toAdd = []	# list of (allele key, marker key) tuples to add
 
-        for (alleleKey, markerKey) in list(all2mrk.items()):
-                if alleleKey in mixedAlleles:
+        for (alleleKey, markerKey) in all2mrk.items():
+                if mixedAlleles.has_key(alleleKey):
                         continue
 
                 # if this is a novel association, we must add it
 
-                if alleleKey not in allAssoc:
+                if not allAssoc.has_key(alleleKey):
                         toAdd.append ( (alleleKey, markerKey))
                         revisedAlleles[alleleKey] = 1
                 else:
@@ -1163,7 +1162,7 @@ def updateMarkerAssoc (
 
         LOGGER.log ('diag', 'Identified %d new type A molecular notes (loaded association based on overlap)' % changed)
 
-        return list(revisedAlleles.keys())
+        return revisedAlleles.keys()
 
 ###------------------------------------------------------------------------###
 
@@ -1365,13 +1364,13 @@ def flagMixedAlleles():
                 # we want to ignore alleles which have curated isMixed flags;
                 # these are ones with a Mixed reference
 
-                if alleleKey in curated:
+                if curated.has_key(alleleKey):
                         continue
 
                 # we only want to consider sequences with DNA-based seq tags
 
                 if 3983002 <= row['_TagMethod_key'] <= 3983007:
-                        if alleleKey in alleles:
+                        if alleles.has_key (alleleKey):
                                 alleles[alleleKey].append (row)
                         else:
                                 alleles[alleleKey] = [ row ]
@@ -1387,7 +1386,7 @@ def flagMixedAlleles():
         setMixed = []		# list of allele keys to set the isMixed bit
         asIs = 0		# count of allele keys w/ correct isMixed bits
 
-        for (allele, seqs) in list(alleles.items()):
+        for (allele, seqs) in alleles.items():
                 mixedInDb = seqs[0]['isMixed']
 
                 # alleles with only one sequence cannot be mixed; clear the
@@ -1498,7 +1497,7 @@ def setupNoteCache ():
         results = db.sql(cmd, 'auto')
         for row in results:
                 objectKey = row['_Object_key']
-                if objectKey in LOADED_NOTES:
+                if LOADED_NOTES.has_key(objectKey):
                         (key, notes) = LOADED_NOTES[objectKey]
                         LOADED_NOTES[objectKey] = (key, notes + row['note'])
                 else:
@@ -1538,11 +1537,11 @@ def setMolecularNote (alleleKey, note):
         global CHUNKS_TO_DELETE, NOTES_TO_ADD, CHUNKS_TO_ADD
 
         # if this allele has a curated molecular note, skip the update
-        if alleleKey in CURATED_NOTES:
+        if CURATED_NOTES.has_key(alleleKey):
                 return False
 
         # if we already set a note for this allele during this run, skip it
-        if alleleKey in ALREADY_SET:
+        if ALREADY_SET.has_key(alleleKey):
                 return False
 
         # otherwise, we're going to set one, so remember it
@@ -1550,7 +1549,7 @@ def setMolecularNote (alleleKey, note):
 
         # if this allele already has a loaded molecular note, we can either
         # keep it (if the same) or delete its chunks (if different)
-        if alleleKey in LOADED_NOTES:
+        if LOADED_NOTES.has_key(alleleKey):
                 if LOADED_NOTES[alleleKey][1].strip() == note:
                         return False
 
@@ -1578,16 +1577,16 @@ def clearLoadedNote(alleleKey):
         global NOTES_TO_DELETE, LOADED_NOTES
 
         # if the allele's note was a curated one, do not delete it
-        if alleleKey in CURATED_NOTES:
+        if CURATED_NOTES.has_key(alleleKey):
                 return False
 
         # if the allele does not have a loaded note, there's nothing to delete
-        if alleleKey not in LOADED_NOTES:
+        if not LOADED_NOTES.has_key(alleleKey):
                 return False
 
         # if we set a note for the allele during this run, do not delete the
         # new note
-        if alleleKey in ALREADY_SET:
+        if ALREADY_SET.has_key(alleleKey):
                 return False
 
         # this note will be deleted in a batch later on; for now, just add it
@@ -1689,7 +1688,7 @@ def setSequenceTagMolecularNotes(mixedAlleles):
 
         for row in results:
                 # skip mixed alleles
-                if row['_Allele_key'] in mixedAlleles:
+                if mixedAlleles.has_key(row['_Allele_key']):
                         continue
                 if row['goodHitCount'] == 1:
                         if setMolecularNote (row['_Allele_key'], NOTE_B):
@@ -1725,15 +1724,15 @@ def reportMixed(seqMrkDict):
         alleles = {}
         for row in results:
                 alleleKey = row['_Allele_key']
-                if alleleKey in alleles:
+                if alleles.has_key(alleleKey):
                         alleles[alleleKey].append (row['_Sequence_key'])
                 else:
                         alleles[alleleKey] = [ row['_Sequence_key'] ]
 
-        for (alleleKey, seqKeys) in list(alleles.items()):
+        for (alleleKey, seqKeys) in alleles.items():
                 seqs = []
                 for seqKey in seqKeys:
-                        if seqKey in seqMrkDict:
+                        if seqMrkDict.has_key(seqKey):
                                 seqs.append ( (seqKey, seqMrkDict[seqKey]))
                         else:
                                 seqs.append ( (seqKey, []))
@@ -1768,9 +1767,9 @@ def writeException (
 def writeLogFile (
         excInfo,	 	# 3-item tuple, as from sys.exc_info(), to be
                                 # ...recorded in the log file
-        filename, 		# str. filename to which to write
+        filename, 		# string; filename to which to write
         logs, 			# list of tuples: (log name, title, writer)
-        title			# str. overall title for page to write
+        title			# string; overall title for page to write
         ):
         # Purpose: to write a log file, containing various log tables, to
         #	a given filename
@@ -1784,14 +1783,14 @@ def writeLogFile (
                 fp = open (file, 'w')
         except:
                 msg = 'Cannot write log file to: %s' % file
-                print(msg)
+                print msg
                 sys.stderr.write (msg + '\n')
 
                 file = os.path.join ('/tmp/', filename)
                 fp = open (file, 'w')
 
                 msg2 = 'Wrote instead to: %s' % file
-                print(msg2)
+                print msg2
                 sys.stderr.write (msg2 + '\n')
 
         fp.write ('<HTML><HEAD><TITLE>%s</TITLE></HEAD>\n' % title)

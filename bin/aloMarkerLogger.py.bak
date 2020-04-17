@@ -85,7 +85,7 @@ class AloMarkerLogWriter:
 
         def write (self,
                 fp,	# file pointer to which to write the log
-                title,	# str. title for the log
+                title,	# string; title for the log
                 log	# AloMarkerLog; which has the entries to write
                 ):
                 # Purpose: write the given 'log' to 'fp' with a given 'title'
@@ -126,7 +126,7 @@ class AloMarkerLogWriterHTML (AloMarkerLogWriter):
 
         def write (self,
                 fp,	# file pointer to which to write the log
-                title,	# str. title for the log
+                title,	# string; title for the log
                 log	# AloMarkerLog; which has the entries to write
                 ):
                 # Purpose: write the given 'log' to 'fp' with a given 'title'
@@ -304,7 +304,7 @@ class AloMarkerLogManager:
                 return
 
         def log (self,
-                logName, 	# str. name of log to which to send 'entry'
+                logName, 	# string; name of log to which to send 'entry'
                 entry		# any type; the entry to be logged
                 ):
                 # Purpose: send a given log 'entry' to a named AloMarkerLog
@@ -319,7 +319,7 @@ class AloMarkerLogManager:
 
                 # if we don't already have a log by that name, create new one
 
-                if logName not in self.logs:
+                if not self.logs.has_key(logName):
                         self.logs[logName] = AloMarkerLog()
                 self.logs[logName].addEntry (entry)
                 if DEBUG:
@@ -328,8 +328,8 @@ class AloMarkerLogManager:
                 return
 
         def writeLog (self,
-                logName, 	# str. name of log to write
-                title, 		# str. title for the output table
+                logName, 	# string; name of log to write
+                title, 		# string; title for the output table
                 logWriter, 	# AloMarkerLogWriter; to use to build output
                 fp		# file pointer; where to write the output
                 ):
@@ -349,7 +349,7 @@ class AloMarkerLogManager:
                 # to the specified writer
 
                 myLog = None
-                if logName in self.logs:
+                if self.logs.has_key(logName):
                         myLog = self.logs[logName]
                 logWriter.write (fp, title, myLog)
                 return
