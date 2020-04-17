@@ -68,7 +68,7 @@ LOG_DEBUG=true
 export LOG_DEBUG
 
 # fjoin
-FJOIN_SCRIPT=${LIBDIRS}/fjoin.py
+FJOIN_SCRIPT="${PYTHON} ${LIBDIRS}/fjoin.py"
 export FJOIN_SCRIPT
 
 #############################################################################
