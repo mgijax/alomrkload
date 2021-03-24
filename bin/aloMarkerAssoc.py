@@ -489,7 +489,7 @@ def writeMarkerGff():
                         AND c.startCoordinate is not null
                         AND c._Marker_key = m._Marker_Key
                         AND m._Marker_Type_key IN (1, 7)
-                        AND m._Marker_Status_key = 1)'''
+                        AND m._Marker_Status_key = 1'''
         results = db.sql (cmd, 'auto')
         LOGGER.log ('diag', 'Retrieved %d markers with coordinates' % len(results))
 
