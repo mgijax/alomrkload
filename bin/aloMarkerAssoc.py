@@ -5,7 +5,7 @@
 # Assumes: exclusive write access to the database
 # Alters Data in these Database Tables:
 #	SEQ_GeneTrap, SEQ_Allele_Assoc, ALL_Allele,
-#	MGI_Note, MGI_NoteChunk
+#	MGI_Note
 # Environment variables:
 #	required: MGD_DBSERVER, MGD_DBNAME, MGD_DBUSER, and (MGD_DBPASSWORD or MGD_DBPASSWORDFILE)
 #	optional: LOGDIR, LOG_DEBUG
@@ -113,7 +113,7 @@ NOTE_D = '''Mixed cell lines contain multiple mutant cell line clones mixed toge
 
 # Note caches
 CURATED_NOTES = {}	# has allele key for each allele with curated mol.note
-LOADED_NOTES = {}	# allele key -> (note key, note chunks) for alleles w/
+LOADED_NOTES = {}	# allele key -> (note key, note) for alleles w/
                         # ...loaded mol.notes
 NEXT_NOTE_KEY = None	# next _Note_key to use when inserting new notes
 
@@ -381,6 +381,10 @@ def bcpin (table, filename):
 
         # re-enable indices
         db.reenableIndices(table)
+
+        # update mgi_note_seq auto-sequence
+        db.sql(''' select setval('mgi_note_seq', (select max(_Note_key) from MGI_Note)) ''', None)
+        db.commit()
 
 ###------------------------------------------------------------------------###
 
@@ -1485,14 +1489,12 @@ def setupNoteCache ():
         # the contents of the note to see if we need to update it or if it
         # is still correct
         cmd = '''
-            SELECT n._Object_key, n._Note_key, c.note
-            FROM MGI_Note n,
-                    MGI_NoteChunk c
+            SELECT n._Object_key, n._Note_key, n.note
+            FROM MGI_Note n
             WHERE n._NoteType_key = 1021
                     AND n._MGIType_key = 11
                     AND n._ModifiedBy_key = %s
-                    AND n._Note_key = c._Note_key
-            ORDER BY c._Note_key, c.sequenceNum
+            ORDER BY n._Note_key
         ''' % (USER)
 
         results = db.sql(cmd, 'auto')
@@ -1505,25 +1507,16 @@ def setupNoteCache ():
                         LOADED_NOTES[objectKey] = (row['_Note_key'],
                                 row['note'])
 
-        # remember the next note key value that we should use as we add more
-        # molecular notes
-        cmd = '''
-            SELECT MAX(_Note_key) as maxKey FROM MGI_Note
-        '''
-
-        results = db.sql(cmd, 'auto')
-        NEXT_NOTE_KEY = results[0]['maxKey'] + 1
-        LOGGER.log ('diag', 'Retrieved %d existing molecular notes' % \
-                (len(CURATED_NOTES) + len(LOADED_NOTES)))
+        results = db.sql(''' select nextval('mgi_note_seq') as maxKey ''', 'auto')
+        NEXT_NOTE_KEY = results[0]['maxKey']
+        LOGGER.log ('diag', 'Retrieved %d existing molecular notes' % (len(CURATED_NOTES) + len(LOADED_NOTES)))
         return
 
 ###------------------------------------------------------------------------###
 
 ALREADY_SET = {}		# tracks allele keys where we set a note
-CHUNKS_TO_DELETE = []		# note keys for which to delete chunks
 NOTES_TO_DELETE = []		# note keys for whole notes to be deleted
 NOTES_TO_ADD = []		# list of (note key, allele key) to add
-CHUNKS_TO_ADD = []		# list of (note key, seq num, chunk) to add
 
 def setMolecularNote (alleleKey, note):
         # Purpose: set the given molecular note for the
@@ -1535,7 +1528,7 @@ def setMolecularNote (alleleKey, note):
         # Throws: propagates any exceptions from db.sql()
 
         global NEXT_NOTE_KEY, ALREADY_SET
-        global CHUNKS_TO_DELETE, NOTES_TO_ADD, CHUNKS_TO_ADD
+        global NOTES_TO_ADD
 
         # if this allele has a curated molecular note, skip the update
         if alleleKey in CURATED_NOTES:
@@ -1549,20 +1542,17 @@ def setMolecularNote (alleleKey, note):
         ALREADY_SET[alleleKey] = 1
 
         # if this allele already has a loaded molecular note, we can either
-        # keep it (if the same) or delete its chunks (if different)
+        # keep it (if the same) or delete its note (if different)
         if alleleKey in LOADED_NOTES:
                 if LOADED_NOTES[alleleKey][1].strip() == note:
                         return False
 
                 noteKey = LOADED_NOTES[alleleKey][0]
-                CHUNKS_TO_DELETE.append (noteKey)
         else:
                 noteKey = NEXT_NOTE_KEY
                 NEXT_NOTE_KEY = NEXT_NOTE_KEY + 1
-                NOTES_TO_ADD.append ( (noteKey, alleleKey))
+                NOTES_TO_ADD.append ( (noteKey, alleleKey, note))
 
-
-        CHUNKS_TO_ADD.append ( (noteKey, 1, note))
         return True
 
 ###------------------------------------------------------------------------###
@@ -1607,42 +1597,23 @@ def updateMolecularNotes():
         #	CHUNKS_TO_ADD
         # Returns: nothing
         # Assumes: we can alter the database contents
-        # Effects: updates MGI_Note and MGI_NoteChunk in the database
+        # Effects: updates MGI_Note in the database
         # Throws: propagates any exceptions from update() and bcpin()
 
         noteFile = 'MGI_Note.bcp'
-        chunkFile = 'MGI_NoteChunk.bcp'
         hasNotes = len(NOTES_TO_ADD) > 0
-        hasChunks = len(CHUNKS_TO_ADD) > 0
 
         if hasNotes:
                 fp = open (os.path.join (OUTPUTDIR, noteFile), 'w')
-                for (noteKey, alleleKey) in NOTES_TO_ADD:
-                        fp.write ('%d\t%d\t11\t1021\t%d\t%d\t%s\t%s\n' % (
-                                noteKey, alleleKey, USER, USER, NOW, NOW))
+                for (noteKey, alleleKey, note) in NOTES_TO_ADD:
+                        fp.write ('%d\t%d\t11\t1021\t%s\t%d\t%d\t%s\t%s\n' % (
+                                noteKey, alleleKey, note, USER, USER, NOW, NOW))
                 fp.close()
 
-        if hasChunks:
-                fp = open (os.path.join (OUTPUTDIR, chunkFile), 'w')
-                for (noteKey, seqNum, chunk) in CHUNKS_TO_ADD:
-                        fp.write ('%d\t%d\t%s\t%d\t%d\t%s\t%s\n' % (
-                                noteKey, seqNum, chunk, USER, USER, NOW, NOW))
-                fp.close()
-
-        if hasNotes or hasChunks:
+        if hasNotes:
                 LOGGER.log ('diag', 'Wrote bcp files for molecular notes')
         else:
                 LOGGER.log ('diag', 'No new molecular notes')
-
-        if CHUNKS_TO_DELETE:
-                sublists = batchList (CHUNKS_TO_DELETE, 500)
-                for sublist in sublists:
-                        update ('''DELETE FROM MGI_NoteChunk 
-                                WHERE _Note_key IN (%s)''' % (','.join (
-                                        map (str, sublist))) )
-                LOGGER.log ('diag',
-                        'Removed chunks for %d old molecular notes' % \
-                        len(CHUNKS_TO_DELETE))
 
         if NOTES_TO_DELETE:
                 sublists = batchList (NOTES_TO_DELETE, 500)
@@ -1658,9 +1629,6 @@ def updateMolecularNotes():
                 bcpin ('MGI_Note', noteFile)
                 LOGGER.log ('diag', 'Loaded molecular notes by bcp')
 
-        if hasChunks:
-                bcpin ('MGI_NoteChunk', chunkFile)
-                LOGGER.log ('diag', 'Loaded molecular note chunks by bcp')
         return
 
 ###------------------------------------------------------------------------###
