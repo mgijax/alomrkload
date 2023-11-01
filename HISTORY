@@ -1,3 +1,9 @@
+TAG: alomrkload-6-0-22-?
+DATE: 11/01/2023
+STAFF: lec
+wts2-1311/fl2-594/improve lib_py_postgres
+#       modified:   bin/aloMarkerAssoc.py
+
 TAG: alomrkload-6-0-18-1
 DATE: 02/21/2022
 STAFF: sc

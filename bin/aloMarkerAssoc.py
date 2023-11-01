@@ -373,17 +373,7 @@ def bcpin (table, filename):
         Load data from filename into table
         """
 
-        # disable indices for performance
-        db.disableIndices(table)
-
-        filepath = os.path.join(OUTPUTDIR, filename)
-        db.bcp(filepath, table)
-
-        # re-enable indices
-        db.reenableIndices(table)
-
-        # update mgi_note_seq auto-sequence
-        db.sql(''' select setval('mgi_note_seq', (select max(_Note_key) from MGI_Note)) ''', None)
+        db.bcp(os.path.join(OUTPUTDIR, filename), table, setval="mgi_note_seq", setkey="_note_key")
         db.commit()
 
 ###------------------------------------------------------------------------###
